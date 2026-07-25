@@ -143,28 +143,23 @@ public class LoginController {
         public void run() {
             while (true) {
 //                XREADGROUP GROUP g1 c1 count 1 BLOCK 0 STREAMS STREAM_KEY >
-                try {
-                    List<MapRecord<String,Object,Object>> messageList = stringRedisTemplate.opsForStream().read(
-                            Consumer.from("g1","c1"),
-                            StreamReadOptions.empty().count(1).block(Duration.ofSeconds(10)),
-                            StreamOffset.create(STREAM_KEY, ReadOffset.lastConsumed()));
-                    if (messageList == null || messageList.isEmpty()) {
-                        continue;
-                    }
-                    MapRecord<String,Object,Object> record = messageList.get(0);
-                    Map<Object,Object> map = record.getValue();
-                    String code = map.get("code").toString();
-                    String email = map.get("email").toString();
-                    log.info("发送给"+email +"::"+ code);
-                    userService.sendEmail(email,"Here's your web launch code!",
-                            "Continue signing up for our by entering the code below::"+code);
-                    log.info("邮件发送成功,发送给"+email +"success::"+ code);
-                    stringRedisTemplate.opsForStream().acknowledge(STREAM_KEY,"g1",record.getId());
-                } catch (Exception e) {
-                    // 其他异常（如读取消息失败），记录详细异常信息便于排
-                    log.error("消息处理失败，错误信息={}", e.getMessage(), e);
-                    // 不抛出异常，确保消费者线程不会死亡，继续处理后续消息
+                List<MapRecord<String,Object,Object>> messageList = stringRedisTemplate.opsForStream().read(
+                        Consumer.from("g1","c1"),
+                        StreamReadOptions.empty().count(1).block(Duration.ofSeconds(10)),
+                        StreamOffset.create(STREAM_KEY, ReadOffset.lastConsumed()));
+                if (messageList == null || messageList.isEmpty()) {
+                    continue;
                 }
+                MapRecord<String,Object,Object> record = messageList.get(0);
+                Map<Object,Object> map = record.getValue();
+                String code = map.get("code").toString();
+                String email = map.get("email").toString();
+                log.info("发送给"+email +"::"+ code);
+                userService.sendEmail(email,"Here's your web launch code!",
+                        "Continue signing up for our by entering the code below::"+code);
+                log.info("邮件发送成功,发送给"+email +"success::"+ code);
+                stringRedisTemplate.opsForStream().acknowledge(STREAM_KEY,"g1",record.getId());
+
             }
         }
     }

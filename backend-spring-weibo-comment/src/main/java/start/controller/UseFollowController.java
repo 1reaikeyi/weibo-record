@@ -4,11 +4,13 @@ import cn.hutool.core.util.BooleanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import common.ThreadLocalContext.ThreadLocalParam;
 import common.result.Result;
+import model.entity.User;
 import model.entity.UserFollow;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 import service.UserFollowService;
+import service.UserService;
 
 import java.util.List;
 import java.util.Set;
@@ -18,6 +20,8 @@ import java.util.Set;
 public class UseFollowController {
     @Autowired
     private UserFollowService userFollowService;
+    @Autowired
+    private UserService userService;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
     private static final String KEY = "follow";
@@ -44,7 +48,7 @@ public class UseFollowController {
     public Result getUserFollow(@PathVariable("id") Long followUserId) {
         Long userId = ThreadLocalParam.getUserId();
         UserFollow userFollow = userFollowService.getOne(new LambdaQueryWrapper<UserFollow>()
-                .eq(UserFollow::getFollowUserId,userId)
+                .eq(UserFollow::getUserId,userId)
                 .eq(UserFollow::getFollowUserId,followUserId));
         return Result.success(userFollow != null ? "关注" : "取关" );
     }
@@ -52,6 +56,8 @@ public class UseFollowController {
     public Result getUserFollowCommon(@PathVariable("id") Long followId) {
         Long userId = ThreadLocalParam.getUserId();
         Set<String> comomSet = stringRedisTemplate.opsForSet().intersect(KEY + followId, KEY + userId);
-        return Result.success(comomSet != null ? comomSet.toString() : 0);
+        List<User> userList = comomSet.stream()
+                .map(s -> userService.getById(Long.parseLong(s))).toList();
+        return Result.success(userList);
     }
 }
