@@ -25,6 +25,13 @@ public class UseFollowController {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
     private static final String KEY = "follow";
+
+    /**
+     * 关注
+     * @param followUserId
+     * @param ifFollow
+     * @return
+     */
     @PostMapping("/{id}/{ifFollow}")
     public Result useFollow(@PathVariable("id") Long followUserId, @PathVariable Boolean ifFollow) {
         Long userId = ThreadLocalParam.getUserId();
@@ -44,6 +51,12 @@ public class UseFollowController {
         }
         return Result.success(followUserId + "::" + (BooleanUtil.isTrue(ifFollow) ? "关注" : "取关" ));
     }
+
+    /**
+     * 获取结果
+     * @param followUserId
+     * @return
+     */
     @GetMapping("/{id}")
     public Result getUserFollow(@PathVariable("id") Long followUserId) {
         Long userId = ThreadLocalParam.getUserId();
@@ -52,6 +65,12 @@ public class UseFollowController {
                 .eq(UserFollow::getFollowUserId,followUserId));
         return Result.success(userFollow != null ? "关注" : "取关" );
     }
+
+    /**
+     * 共同关注
+     * @param followId
+     * @return
+     */
     @GetMapping("/common/{id}")
     public Result getUserFollowCommon(@PathVariable("id") Long followId) {
         Long userId = ThreadLocalParam.getUserId();

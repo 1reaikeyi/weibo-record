@@ -18,7 +18,21 @@ spring:
       port: ${title.redis.port}
       password: ${title.redis.password}
       database: ${title.redis.database}
-
+  # 邮箱配置
+  mail:
+    host: smtp.qq.com
+    port: 465                # SSL加密端口
+    username: ${title.email.username}
+    password: ${title.email.password}
+    properties:
+      mail:
+        smtp:
+          auth: true         # 开启认证
+          ssl:
+            enable: true     # 开启SSL加密
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
+            port: 465
   # 配置文件,导入开发环境的配置文件
   config:
     import:

@@ -133,6 +133,7 @@ public class VoucherOrderController {
                if (messageList == null || messageList.isEmpty()) {
                    continue;
                }
+
                MapRecord<String,Object,Object> record = messageList.get(0);
                Map<Object,Object> map = record.getValue();
                VoucherOrder voucherOrder = VoucherOrder.builder()
@@ -140,9 +141,10 @@ public class VoucherOrderController {
                        .userId(Long.parseLong(map.get("userId").toString()))
                        .id(Long.parseLong(map.get("orderId").toString()))
                        .build();
-                System.out.println("voucherOrder = " + voucherOrder);
+               log.info(voucherOrder.toString());
                voucherOrderService.secondKill(voucherOrder);
                stringRedisTemplate.opsForStream().acknowledge(streamKey,"g1",record.getId());
+               log.info("确认acknowledge");
             }
         }
     }

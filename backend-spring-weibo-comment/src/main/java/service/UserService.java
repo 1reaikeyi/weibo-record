@@ -10,5 +10,5 @@ public interface UserService extends IService<User> {
     User findByUsername(String username);
     User matchUser(String userName, String password);
     User matchEmail(String email);
-
+    Boolean sendEmail(String to, String subject, String content);
 }

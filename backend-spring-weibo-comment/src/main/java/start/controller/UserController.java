@@ -85,54 +85,6 @@ public class UserController {
     }
 
     /**
-     * 发送验证码
-     *
-     * @param email 邮箱地址
-     * @return 结果
-     */
-    @Info(desc = "发送验证码")
-    @PostMapping("/code")
-    public Result sendCode(@Email String email) {
-        String secret = "0123456789";
-        StringBuilder codeBuilder = new StringBuilder();
-        Random random = new Random();
-        for (int i = 0; i < 4; i++) {
-            int index = random.nextInt(secret.length());
-            codeBuilder.append(secret.charAt(index));
-        }
-        String code = codeBuilder.toString();
-        stringRedisTemplate.opsForValue().set("code:"+email, code, 10, TimeUnit.MINUTES);
-        return Result.success("验证码："+code);
-    }
-
-    /**
-     * 邮箱登录
-     *
-     * @param email 邮箱地址
-     * @param code 验证码
-     * @return 结果
-     */
-    @Info(desc = "邮箱登录")
-    @PostMapping("byEmail")
-    public Result loginByEmail(String email, String code){
-        String standard_code = stringRedisTemplate.opsForValue().get("code:"+email);
-        if(standard_code == null){
-            return Result.error("验证码获取失败");
-        }
-        User user = userService.matchEmail(email);
-        if(standard_code.equals(code)){
-            Map<String,Object> map = new HashMap<>();
-            map.put(JwtConstant.ID, user.getId());
-            map.put(JwtConstant.NAME, user.getUserName());
-            ThreadLocalContextHolder.set(map);
-            String token = JwtUtil.createJWT(jwtProperties.getSecretKey(), jwtProperties.getTtlMillis(), map);
-            stringRedisTemplate.opsForValue().set("bigevent:"+ user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
-            return Result.success(token);
-        }
-        return Result.error("验证失败");
-    }
-
-    /**
      * 获取用户信息
      * 
      * @param id 用户ID

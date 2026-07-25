@@ -25,12 +25,12 @@ public class WebConfigConfiguration implements WebMvcConfigurer {
         registry.addInterceptor(reLoginInterceptor)
                 .addPathPatterns("/**")
                 .excludePathPatterns("/user/register", "/user/login", "/user/logout",
-                        "/user/code", "/user/byEmail")
+                        "/login/code", "/login/byEmail")
                 .order(0);
         registry.addInterceptor(loginInterceptor)
                 .addPathPatterns("/**")
                 .excludePathPatterns("/user/register", "/user/login", "/user/logout",
-                        "/user/code", "/user/byEmail")
+                        "/login/code", "/login/byEmail")
                 .order(1);
     }
 
