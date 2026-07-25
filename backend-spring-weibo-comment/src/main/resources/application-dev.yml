@@ -11,8 +11,10 @@ title:
     port: 6379
     password: ${MYSQL_PASSWORD}
     database: 0
-
-#文件上传
+  email:
+    username: 2426912619@qq.com
+    password: ${PATH_ai_qq_email}
+  #文件上传
   # 阿里云OSS 地域节点（服务访问地址）
   endpoint: https://oss-cn-beijing.aliyuncs.com
   # 阿里云身份凭证ID（相当于“账号”）
