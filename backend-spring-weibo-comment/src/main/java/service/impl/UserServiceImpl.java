@@ -4,6 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import model.entity.User;
 import mapper.UserMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailException;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,7 +20,10 @@ import org.springframework.util.DigestUtils;
 @Service
 @Slf4j
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
-
+    @Autowired
+    private JavaMailSender mailSender;
+    @Value("${title.email.username}")
+    private String QQ;
     @Override
     public User findByUsername(String username) {
         return this.lambdaQuery().eq(User::getUserName, username)
@@ -44,5 +52,27 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             throw new RuntimeException("用户不存在");
         }
         return checkUser;
+    }
+
+    /**
+     * 发送简单文本邮件
+     *
+     * @param to      收件人
+     * @param subject 主题
+     * @param content 内容
+     */
+    @Override
+    public Boolean sendEmail(String to, String subject, String content) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(QQ);
+            message.setTo(to);
+            message.setSubject(subject);
+            message.setText(content);
+            mailSender.send(message);
+            return true;
+        } catch (MailException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
