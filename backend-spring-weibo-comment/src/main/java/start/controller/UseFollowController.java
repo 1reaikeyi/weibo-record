@@ -24,7 +24,7 @@ public class UseFollowController {
     private UserService userService;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
-    private static final String KEY = "follow";
+    private static final String KEY = "follow:";
 
     /**
      * 关注
@@ -74,8 +74,11 @@ public class UseFollowController {
     @GetMapping("/common/{id}")
     public Result getUserFollowCommon(@PathVariable("id") Long followId) {
         Long userId = ThreadLocalParam.getUserId();
-        Set<String> comomSet = stringRedisTemplate.opsForSet().intersect(KEY + followId, KEY + userId);
-        List<User> userList = comomSet.stream()
+        Set<String> commonSet = stringRedisTemplate.opsForSet().intersect(KEY + followId, KEY + userId);
+        if (commonSet == null || commonSet.size() == 0) {
+            return Result.success(null);
+        }
+        List<User> userList = commonSet.stream()
                 .map(s -> userService.getById(Long.parseLong(s))).toList();
         return Result.success(userList);
     }

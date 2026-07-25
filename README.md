@@ -10,9 +10,7 @@
 
 
 
-![封面](说明/原型功能/two.png)
-
-![封面](说明/原型功能/one.png)
+<img src="说明/原型功能/one.png" alt="封面" style="zoom:50%;" />
 
 # 项目结构
 
@@ -1001,6 +999,240 @@ private class HandleOrderTask implements Runnable {
 
 ---
 
+## 八、邮箱登录与验证码模块
+
+### 需求阶段
+
+**需求背景**：实现邮箱验证码登录功能，支持用户通过邮箱接收验证码进行身份验证登录。
+
+**痛点**：
+- 验证码发送需要异步处理，避免阻塞用户请求
+- 验证码需要设置有效期，过期后失效
+- 高并发场景下邮件发送需要削峰填谷
+
+### 设计阶段
+
+**设计思路**：
+
+Q：为什么用Redis Stream异步发送邮件？
+> A：邮件发送是IO密集型操作，直接在请求线程中发送会导致响应时间过长。使用Redis Stream作为消息队列，可以实现异步解耦，请求线程只负责生成验证码并存入队列，后台线程负责实际发送邮件。
+
+Q：为什么验证码存在Redis而不是数据库？
+> A：验证码是短期临时数据（10分钟过期），存入Redis可以利用其过期自动清理的特性，无需额外维护清理任务，且读写性能更高。
+
+**架构设计**：
+
+```
+发送验证码请求 → LoginController/sendCode() → 生成验证码 → 存入Redis → XADD到Stream → 返回结果
+                                                          ↓
+                                              后台线程 XREADGROUP读取 → 发送邮件 → ACK确认
+                                             
+邮箱登录请求 → LoginController/loginByEmail() → 校验验证码 → 查询用户 → 生成JWT Token → 返回Token
+```
+
+### 编码阶段
+
+**核心代码实现**：
+
+```java
+// LoginController.java - 发送验证码接口
+@PostMapping("/code")
+public Result sendCode(@Email String email) {
+    // 生成4位数字验证码
+    String code = generateCode();
+    // 存入Redis，10分钟过期
+    stringRedisTemplate.opsForValue().set("code:" + email, code, 10, TimeUnit.MINUTES);
+    // 发送到Redis Stream异步处理
+    Map<String, String> message = new HashMap<>();
+    message.put("code", code);
+    message.put("email", email);
+    stringRedisTemplate.opsForStream().add(STREAM_KEY, message);
+    return Result.success("验证码已发送");
+}
+
+// LoginController.java - 邮箱登录接口
+@PostMapping("byEmail")
+public Result loginByEmail(String email, String code){
+    // 从Redis获取标准验证码
+    String standard_code = stringRedisTemplate.opsForValue().get("code:"+email);
+    if(standard_code == null){
+        return Result.error("验证码已过期");
+    }
+    // 查询用户信息
+    User user = userService.matchEmail(email);
+    if(standard_code.equals(code)){
+        // 构建JWT载荷
+        Map<String,Object> map = new HashMap<>();
+        map.put(JwtConstant.ID, user.getId());
+        map.put(JwtConstant.NAME, user.getUserName());
+        ThreadLocalContextHolder.set(map);
+        // 生成Token
+        String token = JwtUtil.createJWT(jwtProperties.getSecretKey(), jwtProperties.getTtlMillis(), map);
+        // Token存入Redis
+        stringRedisTemplate.opsForValue().set("bigevent:"+ user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
+        return Result.success(token);
+    }
+    return Result.error("验证码错误");
+}
+
+// 异步邮件发送任务
+private class HandleCodeTask implements Runnable {
+    @Override
+    public void run() {
+        while (true) {
+            // XREADGROUP GROUP g1 c1 COUNT 1 BLOCK 10000 STREAMS valid:code:stream >
+            List<MapRecord<String,Object,Object>> messageList = stringRedisTemplate.opsForStream().read(
+                    Consumer.from("g1","c1"),
+                    StreamReadOptions.empty().count(1).block(Duration.ofSeconds(10)),
+                    StreamOffset.create(STREAM_KEY, ReadOffset.lastConsumed()));
+            if (messageList == null || messageList.isEmpty()) {
+                continue;
+            }
+            // 解析消息并发送邮件
+            MapRecord<String,Object,Object> record = messageList.get(0);
+            Map<Object,Object> map = record.getValue();
+            String code = map.get("code").toString();
+            String email = map.get("email").toString();
+            userService.sendEmail(email, "验证码", "您的验证码是：" + code);
+            // 确认消息已处理
+            stringRedisTemplate.opsForStream().acknowledge(STREAM_KEY, "g1", record.getId());
+        }
+    }
+}
+```
+
+### 问题修复阶段
+
+**问题1**：Stream消费组重复创建异常
+
+**修复方案**：在 `@PostConstruct` 初始化方法中捕获异常，若消费组已存在则忽略错误
+
+```java
+@PostConstruct
+public void init() {
+    try {
+        stringRedisTemplate.opsForStream().createGroup(STREAM_KEY, "g1");
+        log.info("Redis Stream消费组创建成功");
+    } catch (Exception e) {
+        log.info("消费组已存在，跳过创建");
+    }
+    CODE_EXECUTOR.submit(new HandleCodeTask());
+}
+```
+
+**问题2**：应用关闭时线程池未正确关闭
+
+**修复方案**：在 `@PreDestroy` 方法中优雅关闭线程池
+
+```java
+@PreDestroy
+public void destroy() {
+    CODE_EXECUTOR.shutdown();
+    try {
+        if (!CODE_EXECUTOR.awaitTermination(10, TimeUnit.SECONDS)) {
+            CODE_EXECUTOR.shutdownNow();
+        }
+    } catch (InterruptedException e) {
+        CODE_EXECUTOR.shutdownNow();
+        Thread.currentThread().interrupt();
+    }
+}
+```
+
+---
+
+## 九、关注管理模块
+
+### 需求阶段
+
+**需求背景**：实现用户之间的关注/取关功能，支持查询关注状态和共同关注的用户。
+
+**痛点**：
+- 关注关系需要实时查询
+- 共同关注用户查询需要高效的集合交集运算
+- 关注操作需要同时更新数据库和缓存
+
+### 设计阶段
+
+**设计思路**：
+
+Q：为什么用Redis Set存储关注关系？
+> A：Set支持高效的集合操作（add、remove、contains、intersect），非常适合实现关注关系的管理。共同关注功能可以通过Set的intersect操作快速获取两个用户关注集合的交集。
+
+Q：为什么同时更新数据库和Redis？
+> A：数据库用于持久化存储，保证数据不丢失；Redis用于高性能查询，提高关注状态查询和共同关注计算的响应速度。采用双写策略，先写数据库再写Redis。
+
+**架构设计**：
+```
+关注/取关请求 → UseFollowController/useFollow() → 更新MySQL（user_follow表）→ 更新Redis Set → 返回结果
+查询关注状态 → UseFollowController/getUserFollow() → 查询MySQL → 返回结果
+查询共同关注 → UseFollowController/getUserFollowCommon() → Redis Set intersect → 查询用户信息 → 返回结果
+```
+
+### 编码阶段
+
+**核心代码实现**：
+
+```java
+// UseFollowController.java - 关注/取关接口
+@PostMapping("/{id}/{ifFollow}")
+public Result useFollow(@PathVariable("id") Long followUserId, @PathVariable Boolean ifFollow) {
+    Long userId = ThreadLocalParam.getUserId();
+    if(ifFollow){
+        // 创建关注记录
+        UserFollow userFollow = UserFollow.builder()
+                .userId(userId)
+                .followUserId(followUserId)
+                .build();
+        userFollowService.save(userFollow);
+        // 更新Redis Set
+        stringRedisTemplate.opsForSet().add(KEY + userId, followUserId.toString());
+    } else {
+        // 删除关注记录
+        userFollowService.remove(new LambdaQueryWrapper<UserFollow>()
+                .eq(UserFollow::getUserId, userId)
+                .eq(UserFollow::getFollowUserId, followUserId));
+        // 更新Redis Set
+        stringRedisTemplate.opsForSet().remove(KEY + userId, followUserId.toString());
+    }
+    return Result.success(followUserId + "::" + (ifFollow ? "关注" : "取关"));
+}
+
+// UseFollowController.java - 查询关注状态接口
+@GetMapping("/{id}")
+public Result getUserFollow(@PathVariable("id") Long followUserId) {
+    Long userId = ThreadLocalParam.getUserId();
+    UserFollow userFollow = userFollowService.getOne(new LambdaQueryWrapper<UserFollow>()
+            .eq(UserFollow::getUserId, userId)
+            .eq(UserFollow::getFollowUserId, followUserId));
+    return Result.success(userFollow != null ? "已关注" : "未关注");
+}
+
+// UseFollowController.java - 查询共同关注接口
+@GetMapping("/common/{id}")
+public Result getUserFollowCommon(@PathVariable("id") Long followId) {
+    Long userId = ThreadLocalParam.getUserId();
+    // 计算两个用户关注集合的交集
+    Set<String> commonSet = stringRedisTemplate.opsForSet().intersect(KEY + followId, KEY + userId);
+    // 将用户ID转换为用户信息列表
+    List<User> userList = commonSet.stream()
+            .map(s -> userService.getById(Long.parseLong(s))).toList();
+    return Result.success(userList);
+}
+```
+
+### 问题修复阶段
+
+**问题1**：关注状态返回不够直观 ✅ 已修复
+
+**修复方案**：返回更明确的状态描述（"已关注"/"未关注"），已在 `UseFollowController.java` 中应用
+
+```java
+return Result.success(userFollow != null ? "已关注" : "未关注");
+```
+
+---
+
 # 核心组件设计
 
 ### 1. Redis分布式ID生成器（RedisID）
@@ -1146,15 +1378,33 @@ return 0
 | Spring Boot Starter Web | 3.3.8 | MultipartFile文件上传支持；文件下载响应流处理 |
 | Aliyun SDK OSS | 3.17.4 | AliOssUtil实现文件上传到阿里云OSS，支持CDN加速访问 |
 
+### 邮箱登录与验证码功能依赖
+| 依赖 | 版本 | 功能支撑 |
+| :--- | :--- | :--- |
+| Spring Boot Starter Mail | 3.3.8 | JavaMailSender实现邮件发送功能，支持SMTP协议 |
+| Spring Boot Starter Data Redis | 3.3.8 | **Redis Stream**：异步发送验证码消息队列（`valid:code:stream`），消费组模式支持多实例部署；存储验证码（`code:{email}`，10分钟过期）和登录Token（`bigevent:{userId}`） |
+| JJWT API/Impl/Jackson | 0.12.6 | JwtUtil生成邮箱登录Token，支持自定义载荷和过期时间 |
+| Spring Boot Starter Validation | 3.3.8 | @Email注解校验邮箱格式合法性 |
+
+### 关注管理功能依赖
+| 依赖 | 版本 | 功能支撑 |
+| :--- | :--- | :--- |
+| MyBatis Plus | 3.5.9 | UserFollowMapper实现关注关系数据CRUD；UserMapper查询用户信息 |
+| Spring Boot Starter Data Redis | 3.3.8 | **Redis Set**：存储用户关注列表（`follow:{userId}`），支持add/remove/intersect操作；共同关注通过Set交集运算高效计算 |
+| Hutool All | 5.8.36 | BooleanUtil判断关注状态布尔值 |
+
 ---
 
 ### 秒杀功能依赖
 
 | 依赖 | 版本 | 功能支撑 |
 | :--- | :--- | :--- |
-|      |      |          |
-|      |      |          |
-|      |      |          |
+| MyBatis Plus | 3.5.9 | VoucherMapper、VoucherSeckillMapper、VoucherOrderMapper实现优惠券数据CRUD；@Transactional注解实现事务一致性 |
+| Spring Boot Starter Data Redis | 3.3.8 | **Lua脚本**：原子性校验库存和重复下单；**Redis Stream**：异步订单消息队列（消费组模式支持多实例部署）；**分布式ID生成**：RedisID类生成全局唯一订单ID |
+| Spring Boot Starter Web | 3.3.8 | VoucherSeckillController、VoucherController、VoucherOrderController提供三种秒杀接口 |
+| Spring Boot Starter Validation | 3.3.8 | 参数校验支持 |
+| Hutool All | 5.8.36 | BeanUtil对象属性拷贝（VoucherDTO转Voucher）；UUID生成分布式锁唯一标识 |
+| Redisson | 3.37.0 | 分布式锁实现一人一单限制；Watchdog自动续期防止锁过期 |
 
 ---
 
@@ -1197,14 +1447,15 @@ public Result seckill(Long voucherId) {
 
 # 前端功能演示
 
-| 登录页面 | ![登录页面](说明/原型功能/1.png) |
-| -------- | -------------------------------- |
-| 分类管理 | ![登录页面](说明/原型功能/2.png) |
-| 文章列表 | ![登录页面](说明/原型功能/3.png) |
-| hot查看  | ![登录页面](说明/原型功能/4.png) |
-| 用户设置 | ![登录页面](说明/原型功能/5.png) |
-| 用户信息 | ![登录页面](说明/原型功能/6.png) |
-| 用户密码 | ![登录页面](说明/原型功能/7.png) |
+| 登录页面   | ![登录页面](说明/原型功能/1.png)                             |
+| ---------- | ------------------------------------------------------------ |
+| 分类管理   | ![登录页面](说明/原型功能/2.png)                             |
+| 文章列表   | ![登录页面](说明/原型功能/3.png)                             |
+| hot查看    | ![登录页面](说明/原型功能/4.png)                             |
+| 用户设置   | ![登录页面](说明/原型功能/5.png)                             |
+| 用户信息   | ![登录页面](说明/原型功能/6.png)                             |
+| 用户密码   | ![登录页面](说明/原型功能/7.png)                             |
+| 邮箱验证码 | <img src="说明/原型功能/邮箱.jpg" alt="登录页面" style="zoom:25%;" /> |
 
 ------
 
