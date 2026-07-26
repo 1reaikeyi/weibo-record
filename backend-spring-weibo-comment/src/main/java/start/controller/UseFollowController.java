@@ -1,9 +1,11 @@
 package start.controller;
 
+import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.BooleanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import common.ThreadLocalContext.ThreadLocalParam;
 import common.result.Result;
+import jakarta.websocket.server.PathParam;
 import model.entity.User;
 import model.entity.UserFollow;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +26,8 @@ public class UseFollowController {
     private UserService userService;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
-    private static final String KEY = "follow:";
+
+    private static final String FOLLOW_PREFIX = "follow:";
 
     /**
      * 关注
@@ -40,14 +43,14 @@ public class UseFollowController {
                     .userId(userId)
                     .followUserId(followUserId)
                     .build();
-            stringRedisTemplate.opsForSet().add(KEY+userId, followUserId.toString());
+            stringRedisTemplate.opsForSet().add(FOLLOW_PREFIX+userId, followUserId.toString());
         userFollowService.save(userFollow);
         }
         if(!ifFollow){
             userFollowService.remove(new LambdaQueryWrapper<UserFollow>()
                     .eq(UserFollow::getFollowUserId,userId)
                     .eq(UserFollow::getFollowUserId,followUserId));
-            stringRedisTemplate.opsForSet().remove(KEY+userId, followUserId.toString());
+            stringRedisTemplate.opsForSet().remove(FOLLOW_PREFIX+userId, followUserId.toString());
         }
         return Result.success(followUserId + "::" + (BooleanUtil.isTrue(ifFollow) ? "关注" : "取关" ));
     }
@@ -74,12 +77,23 @@ public class UseFollowController {
     @GetMapping("/common/{id}")
     public Result getUserFollowCommon(@PathVariable("id") Long followId) {
         Long userId = ThreadLocalParam.getUserId();
-        Set<String> commonSet = stringRedisTemplate.opsForSet().intersect(KEY + followId, KEY + userId);
-        if (commonSet == null || commonSet.size() == 0) {
-            return Result.success(null);
+        Set<String> commonSet = stringRedisTemplate.opsForSet().intersect(FOLLOW_PREFIX + followId, FOLLOW_PREFIX + userId);
+        if (CollectionUtil.isEmpty(commonSet)){
+            return Result.error(null);
         }
-        List<User> userList = commonSet.stream()
-                .map(s -> userService.getById(Long.parseLong(s))).toList();
+
+        List<Long> ids = commonSet.stream().map(s -> Long.parseLong(s)).toList();
+        List<User> userList = userService.listByIds(ids);
         return Result.success(userList);
+    }
+
+    /**
+     * 获得对方blog
+     * @param id
+     * @return
+     */
+    @GetMapping("/allBlog")
+    public Result follow(@PathParam("id") Long id) {
+        return Result.success();
     }
 }

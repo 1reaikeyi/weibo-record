@@ -27,6 +27,7 @@ import start.aspect.Info;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.*;
 
 /**
@@ -46,6 +47,10 @@ public class VoucherOrderController {
     private RedissonClient redissonClient;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+
+    private static final String VOUCHERORDER_STREAM = "stream.order";
+    private static final String VOUCHERORDER_STREAM_GROUP = "group" + UUID.randomUUID();
+
 
     // Lua脚本：校验库存和重复下单
     private static final DefaultRedisScript<Long> REDIS_SCRIPT = new DefaultRedisScript<>();
@@ -67,10 +72,10 @@ public class VoucherOrderController {
     @PostConstruct
     public void init() {
         try {
-            stringRedisTemplate.opsForStream().createGroup("stream.order", "g1");
-            log.info("Redis Stream消费组 g1 创建成功");
+            stringRedisTemplate.opsForStream().createGroup(VOUCHERORDER_STREAM, VOUCHERORDER_STREAM_GROUP);
+            log.info("Redis Stream消费组"+VOUCHERORDER_STREAM_GROUP+" 创建成功");
         } catch (Exception e) {
-            log.info("二次确认:Redis Stream消费组 g1 创建成功");
+            log.info("二次确认:Redis Stream消费组"+VOUCHERORDER_STREAM_GROUP+"创建成功");
         }
         SCEKILL_EXECUTOR.submit(new HandleOrderTask());
     }
@@ -127,7 +132,7 @@ public class VoucherOrderController {
             while (true) {
 //                XREADGROUP GROUP g1 c1 count 10 BLOCK 0 STREAMS s1 >
                List<MapRecord<String,Object,Object>> messageList = stringRedisTemplate.opsForStream().read(
-                       Consumer.from("g1","c1"),
+                       Consumer.from(VOUCHERORDER_STREAM_GROUP,"c1"),
                        StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
                        StreamOffset.create(streamKey, ReadOffset.lastConsumed()));
                if (messageList == null || messageList.isEmpty()) {
@@ -143,7 +148,7 @@ public class VoucherOrderController {
                        .build();
                log.info(voucherOrder.toString());
                voucherOrderService.secondKill(voucherOrder);
-               stringRedisTemplate.opsForStream().acknowledge(streamKey,"g1",record.getId());
+               stringRedisTemplate.opsForStream().acknowledge(streamKey,VOUCHERORDER_STREAM_GROUP,record.getId());
                log.info("确认acknowledge");
             }
         }

@@ -55,6 +55,8 @@ public class VoucherController {
     private RedisID redisID;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+
+    private static final String VOUCHER_STOCK_PREFIX = "voucherSeckill:stock:";
     // Lua脚本：校验库存和重复下单
     private static final DefaultRedisScript<Long> REDIS_SCRIPT = new DefaultRedisScript<>();
     static {
@@ -104,7 +106,7 @@ public class VoucherController {
                         .build();})
                 .toList();
         for (int i = 0; i < voucherSeckillList.size(); i++) {
-            stringRedisTemplate.opsForValue().set("voucherSeckill:stock:"+voucher.getId(),
+            stringRedisTemplate.opsForValue().set(VOUCHER_STOCK_PREFIX+voucher.getId(),
                     voucherSeckillList.get(i).getStock().toString());
         }
         voucherSeckillService.saveBatch(voucherSeckillList);
@@ -162,7 +164,6 @@ public class VoucherController {
                  } catch (Exception e) {
                      // 线程被中断，退出循环
                      Thread.currentThread().interrupt();
-                     log.error("订单处理线程异常: " + e.getMessage());
                      break;
                  }
             }
