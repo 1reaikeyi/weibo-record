@@ -7,6 +7,6 @@ import model.entity.Voucher;
 /**
  * 优惠券Mapper接口 - 提供优惠券数据访问操作
  */
-@Repository
+
 public interface VoucherMapper extends BaseMapper<Voucher> {
 }

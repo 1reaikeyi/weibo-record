@@ -7,6 +7,5 @@ import model.entity.VoucherSeckill;
 /**
  * 秒杀优惠券Mapper接口 - 提供秒杀优惠券数据访问操作
  */
-@Repository
 public interface VoucherSeckillMapper extends BaseMapper<VoucherSeckill> {
 }

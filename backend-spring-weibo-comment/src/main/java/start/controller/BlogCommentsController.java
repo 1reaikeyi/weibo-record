@@ -24,13 +24,11 @@ public class BlogCommentsController {
     @Autowired
     private BlogService blogService;
     @PostMapping("/0/{id}")
-    public Result createBlog(@PathVariable("id") Long id, @RequestBody BlogComments blogComments) {
-        blogCommentsService.save(blogComments);
+    public Result createBlog(@PathVariable("id") Long id) {
         return Result.success();
     }
     @PostMapping("/1/{id}")
-    public Result createBlogComment(@PathVariable("id") Long id, @RequestBody BlogComments blogComments) {
-        blogCommentsService.save(blogComments);
+    public Result createBlogComment(@PathVariable("id") Long id) {
         return Result.success();
     }
 

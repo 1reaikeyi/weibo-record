@@ -49,7 +49,7 @@ public class VoucherOrderController {
     private StringRedisTemplate stringRedisTemplate;
 
     private static final String VOUCHERORDER_STREAM = "stream.order";
-    private static final String VOUCHERORDER_STREAM_GROUP = "group" + UUID.randomUUID();
+    private static final String VOUCHERORDER_STREAM_GROUP = "group";
 
 
     // Lua脚本：校验库存和重复下单
@@ -132,8 +132,8 @@ public class VoucherOrderController {
             while (true) {
 //                XREADGROUP GROUP g1 c1 count 10 BLOCK 0 STREAMS s1 >
                List<MapRecord<String,Object,Object>> messageList = stringRedisTemplate.opsForStream().read(
-                       Consumer.from(VOUCHERORDER_STREAM_GROUP,"c1"),
-                       StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
+                       Consumer.from(VOUCHERORDER_STREAM_GROUP,UUID.randomUUID().toString()),
+                       StreamReadOptions.empty().count(1).block(Duration.ofSeconds(10)),
                        StreamOffset.create(streamKey, ReadOffset.lastConsumed()));
                if (messageList == null || messageList.isEmpty()) {
                    continue;

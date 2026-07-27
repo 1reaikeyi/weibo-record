@@ -8,26 +8,28 @@ import common.ThreadLocalContext.ThreadLocalParam;
 import common.constant.JwtConstant;
 import common.result.Result;
 import common.ThreadLocalContext.ThreadLocalContextHolder;
+import common.result.ScrollResult;
 import jakarta.websocket.server.PathParam;
 import model.dto.BlogDTO;
 import model.entity.Blog;
 import model.entity.User;
 import model.entity.UserFollow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.web.bind.annotation.*;
 import service.BlogService;
 import service.UserFollowService;
 import service.UserService;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 @RestController
 @RequestMapping("/blog")
 public class BlogController {
+    private static final Logger log = LoggerFactory.getLogger(BlogController.class);
     @Autowired
     private BlogService blogService;
     @Autowired
@@ -105,6 +107,41 @@ public class BlogController {
         List<Long> ids = set.stream().map(Long::parseLong).toList();
         List<User> userList = userService.listByIds(ids);
         return Result.success(userList);
+    }
+    /**
+     * blog收件箱
+     * @return
+     */
+    @GetMapping("/follow/of/all")
+    public Result follow(@RequestParam(required = false) Long max, Long offset){
+        if (max == null){
+            max = System.currentTimeMillis();
+        }
+        Long userId = ThreadLocalParam.getUserId();
+        Set<ZSetOperations. TypedTuple<String>> result = stringRedisTemplate.opsForZSet().reverseRangeByScoreWithScores(
+                BLOG_FOLLOW_PREFIX+userId, 0,max,offset,10);
+        if (CollectionUtil.isEmpty(result)){
+            return Result.success(null);
+        }
+        List<Long> ids = new ArrayList<>(result.size());
+        long minTime = 0;
+        int os = 1;
+        for (ZSetOperations.TypedTuple<String> typedTuple : result) {
+            ids.add(Long.parseLong(typedTuple.getValue()));
+            Long time = typedTuple.getScore().longValue();
+            if (minTime == time){
+                os++;
+            } else {
+                minTime = time;
+                os = 1;
+            }
+        }
+        List<Blog> blogList = blogService.listByIds(ids);
+        ScrollResult next = new ScrollResult();
+        next.setList(blogList);
+        next.setMinTime(minTime);
+        next.setOffset(Long.valueOf(os));
+        return Result.success(next);
     }
 
 }

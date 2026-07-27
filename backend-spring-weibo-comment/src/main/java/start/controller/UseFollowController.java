@@ -10,12 +10,15 @@ import model.entity.User;
 import model.entity.UserFollow;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.web.OffsetScrollPositionHandlerMethodArgumentResolver;
 import org.springframework.web.bind.annotation.*;
 import service.UserFollowService;
 import service.UserService;
 
 import java.util.List;
 import java.util.Set;
+
+
 
 @RestController
 @RequestMapping("/follow")
@@ -79,21 +82,12 @@ public class UseFollowController {
         Long userId = ThreadLocalParam.getUserId();
         Set<String> commonSet = stringRedisTemplate.opsForSet().intersect(FOLLOW_PREFIX + followId, FOLLOW_PREFIX + userId);
         if (CollectionUtil.isEmpty(commonSet)){
-            return Result.error(null);
+            return Result.success(null);
         }
-
         List<Long> ids = commonSet.stream().map(s -> Long.parseLong(s)).toList();
         List<User> userList = userService.listByIds(ids);
         return Result.success(userList);
     }
 
-    /**
-     * 获得对方blog
-     * @param id
-     * @return
-     */
-    @GetMapping("/allBlog")
-    public Result follow(@PathParam("id") Long id) {
-        return Result.success();
-    }
+
 }

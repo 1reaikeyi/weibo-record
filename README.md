@@ -10,23 +10,23 @@
 
 
 
-<img src="说明/原型功能/one.png" alt="封面" style="zoom:50%;" />
+<img src="说明/原型功能/one.png" alt="封面" style="zoom:75%;" />
 
 # 项目结构
 
 ```
-big-event/
-├── backend-spring-bigevent/           # 后端代码（Spring Boot）
-├── database-sql/                      # 数据库脚本目录
-│   ├── sql.txt                        # 数据库初始化SQL
-│   └── 数据库设计文档.md               # 完整的数据库设计说明
-├── frontend-vue-bigevent/             # 前端代码（Vue 3）
-└── 说明/                              # 项目说明文档
-      ├── 原型功能/                      # 前端原型截图
-      ├── 并发测试结果/                      # 秒杀并发测试结果
-      │   ├── 乐观锁解决超卖.png          # 乐观锁方案测试截图
-      │   ├── 分布式锁解决集群一人多单.png  # 分布式锁方案测试截图
-      │   ├── 悲观锁集群不能一人一单.png    # 悲观锁方案测试截图
+weibo-comment/
+├── backend-spring-weibo-comment/        # 后端代码
+├── database-sql/                        #数据库脚本目录
+│   ├── sql.txt                          # 数据库初始化SQL
+│   └── 数据库设计文档.md                  # 完整的数据库设计说明
+├── frontend-vue-weibo-comment/          # 前端代码（Vue 3）
+└── 说明/                                 # 项目说明文档
+      ├── 原型功能/                         # 前端原型截图
+      ├── 并发测试结果/                     # 秒杀并发测试结果
+      │   ├── 乐观锁解决超卖.png            # 乐观锁方案测试截图
+      │   ├── 分布式锁解决集群一人多单.png    # 分布式锁方案测试截图
+      │   ├── 悲观锁集群不能一人一单.png     # 悲观锁方案测试截图
       │   ├── redis同步.png         # Redis同步测试截图
       │   ├── redis同步.txt         # Redis同步测试Slf4j日志
       │   ├── redis异步.png         # Redis异步（队列）测试截图
@@ -1229,9 +1229,134 @@ public Result getUserFollowCommon(@PathVariable("id") Long followId) {
 
 ```java
 // 将用户ID转换为用户信息列表
-    List<User> userList = commonSet.stream()
-            .map(s -> userService.getById(Long.parseLong(s))).toList();
+ List<Long> ids = commonSet.stream().map(s -> Long.parseLong(s)).toList();
+//降低负载，ids = 一次
+ List<User> userList = userService.listByIds(ids);
 ```
+
+---
+
+## 十、签到管理模块
+
+### 需求阶段
+
+**需求背景**：实现用户签到功能，支持每日签到、补签和签到统计，激励用户活跃。
+
+**痛点**：
+- 签到记录数据量大，按月存储需要高效的存储空间
+- 签到状态需要快速查询和统计
+- 补签功能需要支持指定日期签到
+
+### 设计阶段
+
+**设计思路**：
+
+Q：为什么用Redis BitMap存储签到记录？
+> A：BitMap（位图）是一种高效的位存储结构，每个用户每天的签到状态只需要1个位（0或1）。一个月最多31天，只需要31个位（约4字节）就能存储一个用户一个月的签到记录，极大节省存储空间。
+
+Q：为什么用bitField命令统计签到次数？
+> A：bitField可以批量获取位图中的位数据，将指定位数的二进制数据转换为十进制数，然后通过统计二进制中1的个数来快速计算签到天数。
+
+**架构设计**：
+
+```
+签到请求 → SignController/createSign() → Redis SetBit设置签到位 → 返回结果
+补签请求 → SignController/backSign() → Redis SetBit设置指定日期签到位 → 返回结果
+统计请求 → SignController/CountSign() → Redis BitField获取位图 → 统计1的个数 → 返回签到/缺勤数
+```
+
+**Redis Key设计**：
+```
+sign:{userId}:{yyyy-MM}  // 用户签到位图Key，例如 sign:1:2024-01
+```
+
+### 编码阶段
+
+**核心代码实现**：
+
+```java
+// SignController.java - 普通签到接口
+@PostMapping
+public Result createSign() {
+    LocalDateTime now = LocalDateTime.now();
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM");
+    
+    Long userId = ThreadLocalParam.getUserId();
+    String dateKey = now.format(formatter);
+    String key = SIGN_DATE + userId + ":" + dateKey;
+    // 将当月第N天转换为位图索引（0开始）
+    Long day = Long.valueOf(now.getDayOfMonth() - 1);
+    // 设置对应位为1，表示已签到
+    Boolean result = stringRedisTemplate.opsForValue().setBit(key, day, true);
+    return Result.success(result == true ? "已签到" : "签到成功");
+}
+```
+
+```java
+// SignController.java - 补签接口
+@PostMapping("/back")
+public Result backSign(String time) {
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    LocalDate localDate = LocalDate.parse(time, formatter);
+    
+    Long userId = ThreadLocalParam.getUserId();
+    DateTimeFormatter formatterKey = DateTimeFormatter.ofPattern("yyyy-MM");
+    String date = localDate.format(formatterKey);
+    String key = SIGN_DATE + userId + ":" + date;
+    Long value = Long.valueOf(localDate.getDayOfMonth() - 1);
+    Boolean result = stringRedisTemplate.opsForValue().setBit(key, value, true);
+    return Result.success(result == true ? "已补签" : "补签成功");
+}
+```
+
+```java
+// SignController.java - 签到统计接口
+@PostMapping("/count")
+public Result CountSign() {
+    LocalDateTime now = LocalDateTime.now();
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM");
+    
+    Long userId = ThreadLocalParam.getUserId();
+    String dateKey = now.format(formatter);
+    String key = SIGN_DATE + userId + ":" + dateKey;
+    // 使用bitField获取从第0位开始的now.getDayOfMonth()个位
+    List<Long> result = stringRedisTemplate.opsForValue().bitField(key, BitFieldSubCommands.create()
+            .get(BitFieldSubCommands.BitFieldType.unsigned(now.getDayOfMonth()))
+            .valueAt(0));
+    
+    if (CollectionUtil.isEmpty(result)) {
+        return Result.success(0);
+    }
+    
+    Long num10 = result.get(0);
+    // 将十进制转换为二进制字符串
+    String num2 = Long.toBinaryString(num10);
+    int count = 0;
+    // 统计二进制中1的个数（签到次数）
+    for (int i = 0; i < num2.length(); i++) {
+        if ('1' == num2.charAt(i)) {
+            count++;
+        }
+    }
+    return Result.success("签到::" + count + ",缺勤::" + (num2.length() - count));
+}
+```
+
+### 问题修复阶段
+
+**问题1**：签到统计时，如果当月没有任何签到记录，result为空导致空指针异常 ✅ 已修复
+
+**修复方案**：使用 `CollectionUtil.isEmpty()` 判断结果是否为空，为空时返回0
+
+```java
+if (CollectionUtil.isEmpty(result)) {
+    return Result.success(0);
+}
+```
+
+**问题2**：补签接口未校验日期是否合法（如日期格式错误、日期超出当月范围）
+
+**修复方案**：在补签接口中添加日期格式校验和范围校验，防止非法日期操作
 
 ---
 
@@ -1394,6 +1519,12 @@ return 0
 | MyBatis Plus | 3.5.9 | UserFollowMapper实现关注关系数据CRUD；UserMapper查询用户信息 |
 | Spring Boot Starter Data Redis | 3.3.8 | **Redis Set**：存储用户关注列表（`follow:{userId}`），支持add/remove/intersect操作；共同关注通过Set交集运算高效计算 |
 | Hutool All | 5.8.36 | BooleanUtil判断关注状态布尔值 |
+
+### 签到管理功能依赖
+| 依赖 | 版本 | 功能支撑 |
+| :--- | :--- | :--- |
+| Spring Boot Starter Data Redis | 3.3.8 | **Redis BitMap**：存储用户签到位图（`sign:{userId}:{yyyy-MM}`），使用SetBit设置签到位，BitField批量获取位数据；每个用户每月仅需约4字节存储 |
+| Hutool All | 5.8.36 | CollectionUtil判断签到统计结果是否为空；BeanUtil对象属性拷贝 |
 
 ---
 

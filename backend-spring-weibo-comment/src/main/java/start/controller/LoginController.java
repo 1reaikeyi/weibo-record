@@ -45,7 +45,7 @@ public class LoginController {
 
     private static final String CODE_PREFIX = "code:";
     private static final String CODE_STREAM = "valid:code:stream";
-    private static final String CODE_STREAM_GROUP = "group" + UUID.randomUUID();
+    private static final String CODE_STREAM_GROUP = "group";
 
     private static final ExecutorService CODE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "code-handler");
@@ -146,7 +146,7 @@ public class LoginController {
 //                XREADGROUP GROUP g1 c1 count 1 BLOCK 0 STREAMS STREAM_KEY >
                 try {
                     List<MapRecord<String,Object,Object>> messageList = stringRedisTemplate.opsForStream().read(
-                            Consumer.from(CODE_STREAM_GROUP,"c1"),
+                            Consumer.from(CODE_STREAM_GROUP,UUID.randomUUID().toString()),
                             StreamReadOptions.empty().count(1).block(Duration.ofSeconds(10)),
                             StreamOffset.create(CODE_STREAM, ReadOffset.lastConsumed()));
                     if (messageList == null || messageList.isEmpty()) {

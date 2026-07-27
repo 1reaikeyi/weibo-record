@@ -18,6 +18,14 @@ spring:
       port: ${title.redis.port}
       password: ${title.redis.password}
       database: ${title.redis.database}
+      client-type: lettuce
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 10
+          max-wait: 3000ms
+          max-idle: 8
+          min-idle: 2
   # 邮箱配置
   mail:
     host: smtp.qq.com
