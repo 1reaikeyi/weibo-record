@@ -65,26 +65,45 @@ weibo-comment/
 Q：为什么不用Session而用JWT？
 > A：Session需要在服务端维护会话状态，集群部署时需要Session共享（Redis），但每次请求都要查Redis。JWT是无状态的，Token本身携带用户信息，服务端只需要验证签名即可，更适合分布式架构。
 
-Q：为什么密码要用MD5加密？
-> A：MD5是单向哈希算法，无法逆向解密，且生成的哈希值长度固定（32位），便于存储。虽然MD5存在碰撞风险，但对于普通项目已经足够安全，且Spring内置的DigestUtils使用方便。
+Q：为什么token要用redis存储？
+> | 维度         | 服务端 Session                |  Redis           |
+> | ------------ | ----------------------------- | ----------------------- |
+> | 部署架构     | 单体友好，集群麻烦            | 天生适配分布式、微服务  |
+> | 存储位置     | 应用服务器内存                | 独立中间件 Redis        |
+> | 客户端适配   | 依赖 Cookie，APP / 小程序难用 | Header 传输，全终端兼容 |
+> | 服务重启影响 | 全部用户掉线                  | 不受影响                |
+> | 强制下线     | 实现复杂                      | 直接删除 key，简单      |
+> | 横向扩容     | 差                            | 优秀                    |
+> | 跨域场景     | Cookie 跨域限制多             | 无 Cookie 限制          |
 
 ### 编码阶段
 
 **策略流程图**：
 
 ```java
-用户注册 → UserController/register() → MD5加密密码 → MySQL保存用户 → 返回注册成功
+用户注册 → UserController/register() → 加密密码 → MySQL保存用户 → 返回注册成功
 用户登录 → UserController/login() → 校验用户名密码 → 生成JWT Token → Redis存储Token → 返回Token
-请求拦截 → LoginInterceptor/ReLoginInterceptor → 校验Token → 滑动过期刷新 → 放行请求
+请求拦截 → 直接拦截脚本等操作LoginInterceptor/对于活跃用户刷新ReLoginInterceptor → 校验Token → 滑动过期刷新 → 放行请求
 ```
 
 **部分代码**：
 
 ```java
-// UserServiceImpl.java - 用户校验（MD5加密）
-password = DigestUtils.md5DigestAsHex(password.getBytes());
-LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
-queryWrapper.eq(User::getUserName, userName).eq(User::getPassword, password);
+// SecurityConfig.java - 注册BCryptPasswordEncoder为Spring Bean
+@Bean
+public PasswordEncoder passwordEncoder() {
+    return new BCryptPasswordEncoder();
+}
+
+// UserServiceImpl.java - 用户校验（BCrypt加密，单向哈希无法解密）
+// matches(rawPassword, encodedPassword): 将明文与加密后的密码比对
+if (!passwordEncoder.matches(password, checkUser.getPassword())) {
+    throw new RuntimeException("用户名或密码错误");
+}
+
+// UserController.java - 注册时加密密码
+// BCrypt内置随机盐，每次encode结果不同
+user.setPassword(passwordEncoder.encode(user.getPassword()));
 ```
 
 ### 问题修复阶段
@@ -1197,6 +1216,7 @@ return 0
 | :--- | :--- | :--- |
 | Spring Boot | 3.3.8 | 应用框架，自动配置数据源、Redis等基础设施 |
 | Spring Boot Starter Web | 3.3.8 | UserController提供REST接口（注册、登录、信息修改、头像上传、密码修改）；注册LoginInterceptor和ReLoginInterceptor拦截器校验登录状态 |
+| Spring Boot Starter Security | 3.3.8 | BCryptPasswordEncoder实现密码单向哈希加密（内置随机盐，每次encode结果不同）；SecurityConfig注册PasswordEncoder Bean供全局注入使用；matches()方法验证密码，而非解密 |
 | MyBatis Plus | 3.5.9 | UserMapper继承BaseMapper实现用户数据CRUD；AutoMetaObjectHandler自动填充create_time、update_time等元数据字段 |
 | JJWT API/Impl/Jackson | 0.12.6 | JwtUtil生成登录Token，ReLoginInterceptor验证Token并实现滑动过期策略（每次请求刷新Redis中Token有效期） |
 | Spring Boot Starter Data Redis | 3.3.8 | 存储用户Token（`bigevent:{userId}`）和邮箱验证码（`code:{email}`，10分钟过期） |

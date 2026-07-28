@@ -6,6 +6,7 @@ import common.result.Result;
 import common.util.JwtUtil;
 import common.ThreadLocalContext.ThreadLocalContextHolder;
 import model.entity.User;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import service.UserService;
 import start.aspect.Info;
@@ -14,7 +15,6 @@ import jakarta.validation.constraints.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.util.DigestUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -43,6 +43,8 @@ public class UserController {
     private JwtProperties jwtProperties;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+    @Autowired
+    private PasswordEncoder passwordEncoder; // 注入密码加密器 Bean
     
     /**
      * 用户注册
@@ -56,8 +58,14 @@ public class UserController {
         if(checkUser != null){
             return Result.error("用户名已存在");
         }
+        if (user.getPassword() == null){
+            user.setPassword("123456");
+        }
         User newUser = User.builder()
-                .userName(user.getUserName()).password(DigestUtils.md5DigestAsHex(user.getPassword().getBytes()))
+                .userName(user.getUserName())
+                // 使用注入的 PasswordEncoder Bean 进行密码加密
+                // BCrypt 是单向哈希算法，每次加密结果不同（内置随机盐）
+                .password(passwordEncoder.encode(user.getPassword()))
                 .nickName(user.getNickName()).email(user.getEmail()).userPic(user.getUserPic())
                 .build();
         userService.save(newUser);
@@ -110,7 +118,7 @@ public class UserController {
     /**
      * 更新用户密码
      * 
-     * @param params 参数
+     * @param params 参数（包含 old_pwd, new_pwd, check_pwd）
      * @return 结果
      */
     @PatchMapping("/updatePwd")
@@ -118,16 +126,35 @@ public class UserController {
         String oldPassword = params.get("old_pwd");
         String newPassword = params.get("new_pwd");
         String checkPassword = params.get("check_pwd");
+        
+        // 参数校验
         if(oldPassword == null || newPassword == null || checkPassword == null){
             return Result.error("缺少必要参数");
         }
+        // 新密码与确认密码一致性校验
         if(!newPassword.equals(checkPassword)){
-            return Result.error("旧密码与确认密码不一致");
+            return Result.error("新密码与确认密码不一致");
         }
-        User user = new User();
-        user.setPassword(DigestUtils.md5DigestAsHex(newPassword.getBytes()));
+        
+        // 从 ThreadLocal 获取当前登录用户信息
+        Map<String, Object> userInfo = ThreadLocalContextHolder.get();
+        Long userId = (Long) userInfo.get(JwtConstant.ID);
+        User user = userService.getById(userId);
+        if(user == null){
+            return Result.error("用户不存在");
+        }
+        
+        // 使用 BCrypt 的 matches 方法验证旧密码（单向哈希无法解密，只能比对）
+        if(!passwordEncoder.matches(oldPassword, user.getPassword())){
+            return Result.error("旧密码不正确");
+        }
+        
+        // 使用 BCrypt 加密新密码（替换原有的 MD5 加密方式）
+        user.setPassword(passwordEncoder.encode(newPassword));
         userService.updateById(user);
-        stringRedisTemplate.delete("token:"+ user.getId());
-        return Result.success("更新密码成功::"+user.getId());
+        
+        // 清除旧的登录令牌，强制重新登录
+        stringRedisTemplate.delete("bigevent:"+ userId);
+        return Result.success("更新密码成功::"+userId);
     }
 }

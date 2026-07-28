@@ -9,10 +9,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.util.DigestUtils;
 
 /**
  * 用户服务实现类 - 实现用户相关业务逻辑
@@ -22,6 +22,8 @@ import org.springframework.util.DigestUtils;
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
     @Autowired
     private JavaMailSender mailSender;
+    @Autowired
+    private PasswordEncoder passwordEncoder; // 注入密码加密器 Bean
     @Value("${title.email.username}")
     private String QQ;
     @Override
@@ -32,12 +34,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public User matchUser(String userName, String password) {
-        password = DigestUtils.md5DigestAsHex(password.getBytes());
         LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(User::getUserName, userName)
-                .eq(User::getPassword, password);
+        queryWrapper.eq(User::getUserName, userName);
         User checkUser = this.getOne(queryWrapper);
         if (checkUser == null) {
+            throw new RuntimeException("用户名或密码错误");
+        }
+        // 使用注入的 PasswordEncoder Bean 验证密码
+        // matches(rawPassword, encodedPassword)：将明文与加密后的密码比对
+        if (!passwordEncoder.matches(password, checkUser.getPassword())) {
             throw new RuntimeException("用户名或密码错误");
         }
         return checkUser;
