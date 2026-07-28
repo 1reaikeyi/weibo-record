@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import start.BigEventApplication;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -23,5 +25,14 @@ public class GETTest {
         for (int i = 0; i < set.size(); i++) {
             System.out.println(i);
         }
+    }
+    @Test
+    public void test2() {
+        int year = 2026;
+        int month = 12;
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        LocalDate localDate = LocalDate.parse(year+"-"+month+"-"+"01", formatter);
+        int day = localDate.lengthOfMonth();
+        System.out.println("days = " + day);
     }
 }

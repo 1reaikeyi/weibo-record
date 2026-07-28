@@ -42,8 +42,8 @@ public class Sign {
     /**
      * 未签到天数
      */
-    @TableField("unsigned")
-    private Long unsigned;
+    @TableField("not_signed")
+    private Long notSigned;
 
     /**
      * 创建时间
