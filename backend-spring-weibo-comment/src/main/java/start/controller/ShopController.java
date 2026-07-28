@@ -1,15 +1,31 @@
 package start.controller;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.collection.CollectionUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import common.result.Result;
+import io.lettuce.core.api.async.RedisGeoAsyncCommands;
 import model.dto.ShopDTO;
+import model.entity.Shop;
+import model.entity.ShopType;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.geo.Distance;
+import org.springframework.data.geo.GeoResult;
+import org.springframework.data.geo.GeoResults;
+import org.springframework.data.geo.Point;
+import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.data.redis.domain.geo.GeoLocation;
+import org.springframework.data.redis.domain.geo.GeoReference;
+import org.springframework.data.redis.domain.geo.Metrics;
+import org.springframework.web.bind.annotation.*;
 import service.ShopService;
 import service.ShopTypeService;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @RestController
 @RequestMapping("/shop")
@@ -20,12 +36,54 @@ public class ShopController {
     private StringRedisTemplate stringRedisTemplate;
     @Autowired
     private ShopTypeService shopTypeService;
+    private static final String SHOP_TYPE = "shopType:";
+
     @PostMapping
     public Result createShop(ShopDTO shopDTO){
+        Shop shop = BeanUtil.toBean(shopDTO, Shop.class);
+        ShopType shopType = BeanUtil.toBean(shopDTO, ShopType.class);
+        shopService.save(shop);
+        shopTypeService.save(shopType);
+        Long typeId = shopType.getId();
+        RedisGeoCommands.GeoLocation<String> location = new RedisGeoCommands.GeoLocation<String>(shop.getId().toString(),
+                                                                new Point(shop.getX(),shop.getY()));
+        stringRedisTemplate.opsForGeo().add(SHOP_TYPE+typeId,location);
         return Result.success(shopDTO);
     }
     @GetMapping("/of/type")
-    public Result ofType() {
-        return Result.success();
+    public Result ofType(@RequestParam Long typeId,
+                         @RequestParam(required = false) Long lastId,
+                         @RequestParam(required = false) Double x,
+                         @RequestParam(required = false) Double y) {
+        // 如果没有传经纬度，使用基于ID的滚动分页查询
+        if( x == null && y == null ){
+            // 使用游标分页：查询ID大于lastId的记录，按ID升序，每页5条
+            List<Shop> shops = shopService.list(
+                    new LambdaQueryWrapper<Shop>()
+                            .eq(Shop::getTypeId, typeId)
+                            .gt(Shop::getId, lastId != null ? lastId : 0)
+                            .orderByAsc(Shop::getId)
+                            .last("LIMIT 5")
+            );
+            return Result.success(shops);
+        }
+        // 如果传了经纬度，使用Redis GEO按距离排序查询附近店铺
+        GeoResults<RedisGeoCommands.GeoLocation<String>> results = stringRedisTemplate.opsForGeo().search(
+                SHOP_TYPE + typeId,
+                GeoReference.fromCoordinate(x,y),
+                new Distance(5, Metrics.KILOMETERS),
+                RedisGeoCommands.GeoSearchCommandArgs.newGeoSearchArgs().includeDistance().limit(5).sortAscending()
+        );
+        if (CollectionUtil.isEmpty(results)){
+            return Result.success(null);
+        }
+        List<String> nearbyShopIds = new ArrayList<>();
+        for (GeoResult<RedisGeoCommands.GeoLocation<String>> item : results) {
+            String shopId = item.getContent().getName();
+            nearbyShopIds.add(shopId);
+        }
+        // 根据ID列表查询店铺详情（按ID列表顺序保持距离排序）
+        List<Shop> shops = shopService.listByIds(nearbyShopIds);
+        return Result.success(shops);
     }
 }

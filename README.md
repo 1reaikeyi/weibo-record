@@ -68,60 +68,23 @@ Q：为什么不用Session而用JWT？
 Q：为什么密码要用MD5加密？
 > A：MD5是单向哈希算法，无法逆向解密，且生成的哈希值长度固定（32位），便于存储。虽然MD5存在碰撞风险，但对于普通项目已经足够安全，且Spring内置的DigestUtils使用方便。
 
-**架构设计**：
-```
-用户请求 → LoginInterceptor → JwtUtil校验Token → Controller → Service → Mapper → MySQL
-                      ↓
-        Redis（存储Token、验证码）
-```
-
 ### 编码阶段
 
-**核心代码实现**：
+**策略流程图**：
 
 ```java
-// UserController.java - 登录逻辑
-@PostMapping("/login")
-public Result login(String userName, String password){
-    // 1. 验证用户（MD5密码匹配）
-    User user = userService.matchUser(userName, password);
-    
-    // 2. 构建Token载荷
-    Map<String,Object> map = new HashMap<>();
-    map.put(JwtConstant.ID, user.getId());
-    map.put(JwtConstant.NAME, user.getUserName());
-    ThreadLocalContextHolder.set(map);
-    
-    // 3. 生成Token
-    String token = JwtUtil.createJWT(jwtProperties.getSecretKey(), jwtProperties.getTtlMillis(), map);
-    
-    // 4. 存入Redis
-    stringRedisTemplate.opsForValue().set(
-        "bigevent:" + user.getId(), 
-        token, 
-        jwtProperties.getTtlMillis(), 
-        TimeUnit.SECONDS
-    );
-    
-    return Result.success(token);
-}
+用户注册 → UserController/register() → MD5加密密码 → MySQL保存用户 → 返回注册成功
+用户登录 → UserController/login() → 校验用户名密码 → 生成JWT Token → Redis存储Token → 返回Token
+请求拦截 → LoginInterceptor/ReLoginInterceptor → 校验Token → 滑动过期刷新 → 放行请求
 ```
 
+**部分代码**：
+
 ```java
-// UserServiceImpl.java - 用户校验
-@Override
-public User matchUser(String userName, String password) {
-    // MD5加密密码后比对
-    password = DigestUtils.md5DigestAsHex(password.getBytes());
-    LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
-    queryWrapper.eq(User::getUserName, userName)
-            .eq(User::getPassword, password);
-    User checkUser = this.getOne(queryWrapper);
-    if (checkUser == null) {
-        throw new RuntimeException("用户名或密码错误");
-    }
-    return checkUser;
-}
+// UserServiceImpl.java - 用户校验（MD5加密）
+password = DigestUtils.md5DigestAsHex(password.getBytes());
+LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+queryWrapper.eq(User::getUserName, userName).eq(User::getPassword, password);
 ```
 
 ### 问题修复阶段
@@ -182,74 +145,30 @@ Q：为什么用逻辑过期而不是物理过期？
 Q：为什么不直接用@Cacheable注解？
 > A：@Cacheable是Spring提供的声明式缓存，虽然方便但不够灵活。比如需要自定义缓存策略、分布式锁控制、逻辑过期等场景，手动控制Redis操作更合适。
 
-**缓存策略流程图**：
-```
-查询文章
-    ↓
-缓存存在？
-    ├─ 是 → 检查逻辑过期？
-    │      ├─ 未过期 → 直接返回缓存数据
-    │      └─ 已过期 → 获取分布式锁
-    │                  ├─ 获取成功 → 查询数据库 → 更新缓存 → 返回新数据
-    │                  └─ 获取失败 → 返回旧缓存数据
-    └─ 否 → 查询数据库 → 设置缓存（逻辑过期时间）→ 返回数据
-```
 
 ### 编码阶段
 
-**核心代码实现**：
+**策略流程图**：
 
 ```java
-// ArticleServiceImpl.java - 带缓存的查询
-@Override
-public Article readCache(Long id) {
-    // 调用逻辑过期缓存策略
-    return logicCache(id);
-}
+查询文章 → ArticleController → ArticleServiceImpl → Redis查询缓存
+    ├─ 缓存存在且未过期 → 直接返回缓存数据
+    ├─ 缓存存在但已过期 → RedisLock分布式锁 → 查询数据库 → 更新缓存 → 返回新数据
+    └─ 缓存不存在 → 查询数据库 → 设置逻辑过期缓存 → 返回数据
+更新文章 → ArticleController → ArticleServiceImpl → 更新MySQL → 删除Redis缓存
+```
 
-private Article logicCache(Long id){
-    String key = KEYS + id;
-    // 1. 从缓存中获取数据
-    String value = stringRedisTemplate.opsForValue().get(key);
-    
-    // 2.1 缓存中没有数据
-    if(StrUtil.isBlank(value)){
-        Article article = super.getById(id);
-        RedisData redisData = new RedisData();
-        if (article == null) {
-            // 空值也缓存，防止缓存穿透
-            redisData.setData(null);
-            redisData.setExpireTime(LocalDateTime.now().plusSeconds(10));
-            stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(redisData));
-            throw new RuntimeException("id不存在");
-        }
-        // 设置逻辑过期时间10秒
-        redisData.setData(article);
-        redisData.setExpireTime(LocalDateTime.now().plusSeconds(10));
-        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(redisData));
-        return article;
-    }
-    
-    // 2.2 缓存中存在数据，检查逻辑过期
-    RedisData redisData = JSONUtil.toBean(value, RedisData.class);
-    if (redisData.getExpireTime().isBefore(LocalDateTime.now())) {
-        log.info("缓存出现过期");
-        // 获取分布式锁更新缓存
-        Boolean success = cacheLock();
-        if(success) {
-            try {
-                Article article = super.getById(id);
-                redisData.setExpireTime(LocalDateTime.now().plusSeconds(10));
-                redisData.setData(article);
-                stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(redisData));
-            } finally {
-                cacheUnlock();
-            }
-        }
-    }
-    // 返回缓存数据
-    return BeanUtil.toBean(redisData.getData(), Article.class);
+**部分代码**：
+
+```java
+// ArticleServiceImpl.java - 逻辑过期缓存查询
+String key = KEYS + id;
+String cacheJson = stringRedisTemplate.opsForValue().get(key);
+if (StrUtil.isBlank(cacheJson)) {
+    // 缓存不存在，查询数据库
+    return getById(id);
 }
+RedisData redisData = JSONUtil.toBean(cacheJson, RedisData.class);
 ```
 
 ### 问题修复阶段
@@ -281,62 +200,28 @@ Q：为什么复用文章模块的缓存策略？
 Q：分类和文章的缓存策略有什么差异？
 > A：分类数据量更小（通常几十到几百个），缓存命中率更高，可以设置更长的逻辑过期时间。而文章数据量大，需要更频繁地更新缓存。
 
-**架构设计**：
-```
-查询分类
-    ↓
-缓存存在？
-    ├─ 是 → 检查逻辑过期？
-    │         ├─ 未过期 → 直接返回缓存数据
-    │         └─ 已过期 → 获取分布式锁更新缓存
-    └─ 否 → 查询数据库 → 设置缓存（逻辑过期时间）→ 返回数据
-```
-
 ### 编码阶段
 
-**核心代码实现**：
+**策略流程图**：
 
 ```java
-// CategoryServiceImpl.java - 带缓存的查询
-@Override
-public Category readCache(Long id) {
-    return logicCache(id);
-}
+查询分类 → CategoryController → CategoryServiceImpl → Redis查询缓存
+    ├─ 缓存存在且未过期 → 直接返回缓存数据
+    ├─ 缓存存在但已过期 → RedisLock分布式锁 → 查询数据库 → 更新缓存 → 返回新数据
+    └─ 缓存不存在 → 查询数据库 → 设置逻辑过期缓存 → 返回数据
+更新分类 → CategoryController → CategoryServiceImpl → 更新MySQL → 删除Redis缓存
+```
 
-private Category logicCache(Long id){
-    String key = KEYS + id;
-    String value = stringRedisTemplate.opsForValue().get(key);
-    
-    if(StrUtil.isBlank(value)){
-        Category category = super.getById(id);
-        RedisData redisData = new RedisData();
-        if (category == null) {
-            redisData.setData(null);
-            redisData.setExpireTime(LocalDateTime.now().plusSeconds(10));
-            stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(redisData));
-            throw new RuntimeException("分类不存在");
-        }
-        redisData.setData(category);
-        redisData.setExpireTime(LocalDateTime.now().plusSeconds(10));
-        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(redisData));
-        return category;
-    }
-    
-    RedisData redisData = JSONUtil.toBean(value, RedisData.class);
-    if (redisData.getExpireTime().isBefore(LocalDateTime.now())) {
-        Boolean success = cacheLock();
-        if(success) {
-            try {
-                Category category = super.getById(id);
-                redisData.setExpireTime(LocalDateTime.now().plusSeconds(10));
-                redisData.setData(category);
-                stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(redisData));
-            } finally {
-                cacheUnlock();
-            }
-        }
-    }
-    return BeanUtil.toBean(redisData.getData(), Category.class);
+**部分代码**：
+
+```java
+// CategoryServiceImpl.java - 更新缓存后主动删除
+@Override
+public Boolean updateCache(Category category) {
+    String key = KEYS + category.getId();
+    boolean result = super.updateById(category);
+    stringRedisTemplate.delete(key);  // 更新后删除缓存，下次查询从数据库获取
+    return result;
 }
 ```
 
@@ -379,55 +264,29 @@ Q：为什么点赞用Redis的ZSet而不是普通Set？
 Q：为什么点赞数同时存Redis和MySQL？
 > A：Redis用于实时查询和计数，MySQL用于持久化存储。点赞操作先更新MySQL再更新Redis，保证数据最终一致性。
 
-**架构设计**：
-```
-点赞请求 → BlogController → BlogServiceImpl（更新MySQL点赞数）→ Redis ZSet记录点赞用户
-查询点赞状态 → Redis ZSet（score判断是否存在）
-查询热门点赞 → Redis ZSet range获取Top N
-```
-
 ### 编码阶段
 
-**核心代码实现**：
+**策略流程图**：
 
 ```java
-// BlogController.java - 点赞功能
-@PostMapping("/liked/{id}")
-public Result isliked(@PathVariable Long id) {
-    Long userId = ThreadLocalParam.getUserId();
-    String key = "blog:liked:" + id;
-    Double liked = stringRedisTemplate.opsForZSet().score(key, userId.toString());
-    
-    if (liked == null) {
-        // 用户未点赞，执行点赞操作
-        boolean success = blogService.lambdaUpdate()
-                .setSql("liked= liked + 1").eq(Blog::getId, id).update();
-        if (success) {
-            stringRedisTemplate.opsForZSet().add(key, userId.toString(), System.currentTimeMillis());
-        }
-        return Result.success("liked::" + id);
-    } else {
-        // 用户已点赞，取消点赞
-        boolean success = blogService.lambdaUpdate()
-                .setSql("liked= liked - 1").eq(Blog::getId, id).update();
-        if (success) {
-            stringRedisTemplate.opsForZSet().remove(key, userId.toString());
-        }
-        return Result.success("unliked::" + id);
-    }
-}
+点赞请求 → BlogController/likes() → 更新MySQL点赞数 → Redis ZSet记录点赞用户（score=timestamp）→ 返回结果
+取消点赞 → BlogController/likes() → 更新MySQL点赞数 → Redis ZSet移除点赞用户 → 返回结果
+查询点赞状态 → Redis ZSet/ZScore判断用户是否存在
+查询热门点赞 → Redis ZSet/ZRange获取Top N用户ID → 查询用户信息 → 返回结果
 ```
 
+**部分代码**：
+
 ```java
-// BlogController.java - 获取热门点赞用户
-@GetMapping("/liked/hot")
-public Result likedHot(@PathParam("id") long id) {
-    String key = "blog:liked:" + id;
-    // 获取点赞数最多的前3个用户
-    Set<String> set = stringRedisTemplate.opsForZSet().range(key, 0, 2);
-    List<Long> ids = set.stream().map(s -> Long.parseLong(s)).toList();
-    List<User> userList = userService.listByIds(ids);
-    return Result.success(userList);
+// BlogController.java - 点赞操作（Redis ZSet）
+String key = "blog:liked:" + blogId;
+Boolean isMember = stringRedisTemplate.opsForZSet().score(key, userId) != null;
+if (Boolean.TRUE.equals(isMember)) {
+    // 已点赞，取消点赞
+    stringRedisTemplate.opsForZSet().remove(key, userId);
+} else {
+    // 未点赞，添加点赞
+    stringRedisTemplate.opsForZSet().add(key, userId, System.currentTimeMillis());
 }
 ```
 
@@ -460,29 +319,25 @@ Q：为什么用parent_id区分评论和回复？
 Q：评论表为什么需要answer_id字段？
 > A：`answer_id` 记录回复目标评论的ID，用于构建评论的回复链，方便前端展示回复关系。
 
-**架构设计**：
-```
-评论请求 → BlogCommentsController → BlogCommentsServiceImpl → MySQL（blog_comments表）
-查询评论列表 → BlogCommentsServiceImpl → MySQL（按blog_id查询，支持分页）
-回复评论 → 设置parent_id=1，answer_id=目标评论ID
-```
-
 ### 编码阶段
 
-**核心代码实现**：
+**策略流程图**：
 
 ```java
-// BlogCommentsController.java - 评论控制器
-@RestController
-@RequestMapping("/comments")
-public class BlogCommentsController {
-    @Autowired
-    private BlogCommentsService blogCommentsService;
-    @Autowired
-    private BlogService blogService;
-    
-    // 评论功能待实现，当前框架已搭建
-}
+发表评论 → BlogCommentsController/save() → 设置parent_id=0 → MySQL保存 → 返回结果
+回复评论 → BlogCommentsController/save() → 设置parent_id=1，answer_id=目标评论ID → MySQL保存 → 返回结果
+查询评论列表 → BlogCommentsController/list() → MySQL按blog_id分页查询 → 返回评论列表（含回复）
+点赞评论 → BlogCommentsController/likes() → MySQL更新点赞数 → 返回结果
+```
+
+**部分代码**：
+
+```java
+// BlogCommentsController.java - 回复评论（设置parent_id和answer_id）
+BlogComments blogComments = BeanUtil.toBean(blogCommentsDTO, BlogComments.class);
+blogComments.setParentId(1L);           // 标记为回复
+blogComments.setAnswerId(targetId);     // 设置回复目标评论ID
+blogCommentsService.save(blogComments);
 ```
 
 ### 问题修复阶段
@@ -514,50 +369,25 @@ Q：为什么提供两种文件存储方式？
 Q：文件命名为什么用UUID？
 > A：UUID全局唯一，避免文件名冲突，同时增加安全性（防止文件遍历攻击）。
 
-**架构设计**：
-```
-文件上传 → FileController（本地）/ FileOssController（阿里云OSS）→ 返回文件访问URL
-文件下载 → FileController（本地）/ FileOssController（阿里云OSS）→ 返回需要下载的文件流
-```
-
 ### 编码阶段
 
-**核心代码实现**：
+**策略流程图**：
 
 ```java
-// FileController.java - 本地文件上传
-@PostMapping("/upload")
-public Result upload(MultipartFile file) {
-    String originalFilename = file.getOriginalFilename();
-    File file_local = new File("img");
-    String path = file_local.getAbsolutePath();
-    if (!file_local.exists()) {
-        file_local.mkdirs();
-    }
-    // 使用UUID生成唯一文件名
-    String saveName = UUID.randomUUID().toString() + "."
-            + originalFilename.substring(originalFilename.lastIndexOf("."));
-    file.transferTo(new File(path, saveName));
-    return Result.success("img/" + saveName);
-}
+文件上传（本地）→ FileController/upload() → UUID生成文件名 → 保存到本地目录 → 返回本地访问URL
+文件上传（阿里云OSS）→ FileOssController/upload() → UUID生成文件名 → AliOssUtil上传 → 返回CDN访问URL
+文件下载（本地）→ FileController/download() → 读取本地文件 → 设置Content-Disposition → 返回文件流
+文件下载（阿里云OSS）→ FileOssController/download() → AliOssUtil下载 → 返回文件流
 ```
 
+**部分代码**：
+
 ```java
-// FileOssController.java - 阿里云OSS文件上传
-@PostMapping("/upload")
-public ResponseEntity<Map<String, String>> uploadFile(@RequestParam("file") MultipartFile file) {
-    String originalFilename = file.getOriginalFilename();
-    String extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-    String objectName = UUID.randomUUID().toString() + extension;
-    
-    // 调用AliOssUtil上传到阿里云OSS
-    String url = aliOssUtil.uploadFile(objectName, file.getInputStream());
-    
-    Map<String, String> fileResult = new HashMap<>();
-    fileResult.put("url", url);
-    fileResult.put("filename", originalFilename);
-    return ResponseEntity.ok(fileResult);
-}
+// FileController.java - 本地文件上传（UUID命名）
+String originalFilename = file.getOriginalFilename();
+String extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+String fileName = UUID.randomUUID().toString() + extension;
+file.transferTo(new File(basePath + fileName));
 ```
 
 ### 问题修复阶段
@@ -597,15 +427,15 @@ Q：为什么用Lua脚本？
 Q：为什么要异步处理订单？
 > A：如果同步处理，用户下单请求需要等待数据库操作完成，响应时间长。异步处理可以先返回订单ID，后台线程慢慢处理数据库写入，提升用户体验。
 
-**秒杀架构设计**：
+**秒杀策略流程图设计**：
 
-#### 同步版本流程（VoucherSeckillController）
+#### 同步版本流程（VoucherSeckillController)这里使用redisson
 
 ```
 用户请求 → 校验秒杀活动 → 生成订单ID → 直接调用secondKill() → 扣库存+保存订单 → 返回结果
 ```
 
-#### 异步版本流程（VoucherController - 内存队列）
+#### 异步单机版本流程（VoucherController - 内存队列）模拟redisLock使用
 
 ```
 用户请求 → 校验秒杀活动 → Lua脚本校验 → 放入ArrayBlockingQueue → 返回订单ID
@@ -613,7 +443,7 @@ Q：为什么要异步处理订单？
                                         后台线程 take() → RedisLock → paySuccess() → 扣库存+保存订单
 ```
 
-#### 异步版本流程（VoucherOrderController - Redis Stream）
+#### 异步分布式版本流程（VoucherOrderController - Redis Stream）这里使用redisson
 
 ```
 用户请求 → 校验秒杀活动 → Lua脚本校验（自动XADD到Stream）→ 返回订单ID
@@ -639,7 +469,7 @@ Q：为什么要异步处理订单？
 
 ### 编码阶段
 
-**核心代码实现**：
+**部分代码实现**：
 
 **创建优惠券**
 
@@ -794,7 +624,7 @@ private class HandleOrderTask implements Runnable {
 - 使用 Redisson 分布式锁保证一人一单
 - 同步处理，用户请求需要等待数据库操作完成
 
-**核心代码实现**：
+**部分代码实现**：
 ```java
 // VoucherSeckillController.java
 @PostMapping("/pay")
@@ -821,7 +651,7 @@ public Result redisLock(@RequestBody VoucherOrder voucherOrder) {
 
 ---
 
-#### 2. VoucherController（异步版本 - 内存队列）
+#### 2. VoucherController（异步版本 - 单机版本流程）
 
 **架构特点**：
 - 使用 Lua 脚本在 Redis 中完成库存校验和扣减
@@ -829,7 +659,7 @@ public Result redisLock(@RequestBody VoucherOrder voucherOrder) {
 - 单线程后台处理器从队列中取出订单完成数据库操作
 - 使用自定义 `RedisLock` 分布式锁防止重复处理
 
-**核心代码实现**：
+**部分代码实现**：
 ```java
 // VoucherController.java - 下单接口
 @PostMapping("/pay")
@@ -910,7 +740,7 @@ private class HandleOrderTaskByList implements Runnable {
 - 使用消费组模式（Consumer Group），支持多实例部署
 - 使用 Redisson 分布式锁防止重复处理
 
-**核心代码实现**：
+**部分代码实现**：
 ```java
 // VoucherOrderController.java - 下单接口
 @PostMapping("/pay")
@@ -1020,85 +850,25 @@ Q：为什么用Redis Stream异步发送邮件？
 Q：为什么验证码存在Redis而不是数据库？
 > A：验证码是短期临时数据（10分钟过期），存入Redis可以利用其过期自动清理的特性，无需额外维护清理任务，且读写性能更高。
 
-**架构设计**：
-
-```
-发送验证码请求 → LoginController/sendCode() → 生成验证码 → 存入Redis → XADD到Stream → 返回结果
-                                                          ↓
-                                              后台线程 XREADGROUP读取 → 发送邮件 → ACK确认
-                                             
-邮箱登录请求 → LoginController/loginByEmail() → 校验验证码 → 查询用户 → 生成JWT Token → 返回Token
-```
-
 ### 编码阶段
 
-**核心代码实现**：
+**策略流程图**：
 
 ```java
-// LoginController.java - 发送验证码接口
-@PostMapping("/code")
-public Result sendCode(@Email String email) {
-    // 生成4位数字验证码
-    String code = generateCode();
-    // 存入Redis，10分钟过期
-    stringRedisTemplate.opsForValue().set("code:" + email, code, 10, TimeUnit.MINUTES);
-    // 发送到Redis Stream异步处理
-    Map<String, String> message = new HashMap<>();
-    message.put("code", code);
-    message.put("email", email);
-    stringRedisTemplate.opsForStream().add(STREAM_KEY, message);
-    return Result.success("验证码已发送");
-}
+发送验证码 → LoginController/sendCode() → 生成6位验证码 → Redis存储（10分钟过期）→ XADD到Redis Stream → 返回结果
+                                               ↓
+                                       后台线程 XREADGROUP读取 → JavaMailSender发送邮件 → ACK确认
+邮箱登录 → LoginController/loginByEmail() → Redis校验验证码 → 查询用户 → 生成JWT Token → 返回Token
+```
 
-// LoginController.java - 邮箱登录接口
-@PostMapping("byEmail")
-public Result loginByEmail(String email, String code){
-    // 从Redis获取标准验证码
-    String standard_code = stringRedisTemplate.opsForValue().get("code:"+email);
-    if(standard_code == null){
-        return Result.error("验证码已过期");
-    }
-    // 查询用户信息
-    User user = userService.matchEmail(email);
-    if(standard_code.equals(code)){
-        // 构建JWT载荷
-        Map<String,Object> map = new HashMap<>();
-        map.put(JwtConstant.ID, user.getId());
-        map.put(JwtConstant.NAME, user.getUserName());
-        ThreadLocalContextHolder.set(map);
-        // 生成Token
-        String token = JwtUtil.createJWT(jwtProperties.getSecretKey(), jwtProperties.getTtlMillis(), map);
-        // Token存入Redis
-        stringRedisTemplate.opsForValue().set("bigevent:"+ user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
-        return Result.success(token);
-    }
-    return Result.error("验证码错误");
-}
+**部分代码**：
 
-// 异步邮件发送任务
-private class HandleCodeTask implements Runnable {
-    @Override
-    public void run() {
-        while (true) {
-            // XREADGROUP GROUP g1 c1 COUNT 1 BLOCK 10000 STREAMS valid:code:stream >
-            List<MapRecord<String,Object,Object>> messageList = stringRedisTemplate.opsForStream().read(
-                    Consumer.from("g1","c1"),
-                    StreamReadOptions.empty().count(1).block(Duration.ofSeconds(10)),
-                    StreamOffset.create(STREAM_KEY, ReadOffset.lastConsumed()));
-            if (messageList == null || messageList.isEmpty()) {
-                continue;
-            }
-            // 解析消息并发送邮件
-            MapRecord<String,Object,Object> record = messageList.get(0);
-            Map<Object,Object> map = record.getValue();
-            String code = map.get("code").toString();
-            String email = map.get("email").toString();
-            userService.sendEmail(email, "验证码", "您的验证码是：" + code);
-            // 确认消息已处理
-            stringRedisTemplate.opsForStream().acknowledge(STREAM_KEY, "g1", record.getId());
-        }
-    }
-}
+```java
+// LoginController.java - 发送验证码（异步）
+String code = RandomUtil.randomString(6);  // 生成6位随机验证码
+stringRedisTemplate.opsForValue().set("code:" + email, code, 10, TimeUnit.MINUTES);
+// XADD到Redis Stream，异步发送邮件
+stringRedisTemplate.opsForStream().add("valid:code:stream", Map.of("email", email, "code", code));
 ```
 
 ### 问题修复阶段
@@ -1162,63 +932,25 @@ Q：为什么用Redis Set存储关注关系？
 Q：为什么同时更新数据库和Redis？
 > A：数据库用于持久化存储，保证数据不丢失；Redis用于高性能查询，提高关注状态查询和共同关注计算的响应速度。采用双写策略，先写数据库再写Redis。
 
-**架构设计**：
-```
-关注/取关请求 → UseFollowController/useFollow() → 更新MySQL（user_follow表）→ 更新Redis Set → 返回结果
-查询关注状态 → UseFollowController/getUserFollow() → 查询MySQL → 返回结果
-查询共同关注 → UseFollowController/getUserFollowCommon() → Redis Set intersect → 查询用户信息 → 返回结果
-```
-
 ### 编码阶段
 
-**核心代码实现**：
+**策略流程图**：
 
 ```java
-// UseFollowController.java - 关注/取关接口
-@PostMapping("/{id}/{ifFollow}")
-public Result useFollow(@PathVariable("id") Long followUserId, @PathVariable Boolean ifFollow) {
-    Long userId = ThreadLocalParam.getUserId();
-    if(ifFollow){
-        // 创建关注记录
-        UserFollow userFollow = UserFollow.builder()
-                .userId(userId)
-                .followUserId(followUserId)
-                .build();
-        userFollowService.save(userFollow);
-        // 更新Redis Set
-        stringRedisTemplate.opsForSet().add(KEY + userId, followUserId.toString());
-    } else {
-        // 删除关注记录
-        userFollowService.remove(new LambdaQueryWrapper<UserFollow>()
-                .eq(UserFollow::getUserId, userId)
-                .eq(UserFollow::getFollowUserId, followUserId));
-        // 更新Redis Set
-        stringRedisTemplate.opsForSet().remove(KEY + userId, followUserId.toString());
-    }
-    return Result.success(followUserId + "::" + (ifFollow ? "关注" : "取关"));
-}
+关注请求 → UseFollowController/useFollow() → MySQL保存关注关系 → Redis Set添加（follow:{userId}）→ 返回结果
+取关请求 → UseFollowController/useFollow() → MySQL删除关注关系 → Redis Set移除（follow:{userId}）→ 返回结果
+查询关注状态 → UseFollowController/getUserFollow() → Redis Set/IsMember判断 → 返回结果
+查询共同关注 → UseFollowController/getUserFollowCommon() → Redis Set/ZIntersect → 查询用户信息 → 返回结果
+```
 
-// UseFollowController.java - 查询关注状态接口
-@GetMapping("/{id}")
-public Result getUserFollow(@PathVariable("id") Long followUserId) {
-    Long userId = ThreadLocalParam.getUserId();
-    UserFollow userFollow = userFollowService.getOne(new LambdaQueryWrapper<UserFollow>()
-            .eq(UserFollow::getUserId, userId)
-            .eq(UserFollow::getFollowUserId, followUserId));
-    return Result.success(userFollow != null ? "已关注" : "未关注");
-}
+**部分代码**：
 
-// UseFollowController.java - 查询共同关注接口
-@GetMapping("/common/{id}")
-public Result getUserFollowCommon(@PathVariable("id") Long followId) {
-    Long userId = ThreadLocalParam.getUserId();
-    // 计算两个用户关注集合的交集
-    Set<String> commonSet = stringRedisTemplate.opsForSet().intersect(KEY + followId, KEY + userId);
-    // 将用户ID转换为用户信息列表
-    List<User> userList = commonSet.stream()
-            .map(s -> userService.getById(Long.parseLong(s))).toList();
-    return Result.success(userList);
-}
+```java
+// UseFollowController.java - 共同关注查询（Redis Set交集）
+Set<String> commonSet = stringRedisTemplate.opsForSet().intersect(
+    "follow:" + userId, "follow:" + targetUserId);
+List<Long> ids = commonSet.stream().map(Long::parseLong).toList();
+List<User> userList = userService.listByIds(ids);
 ```
 
 ### 问题修复阶段
@@ -1255,91 +987,43 @@ Q：为什么用Redis BitMap存储签到记录？
 > A：BitMap（位图）是一种高效的位存储结构，每个用户每天的签到状态只需要1个位（0或1）。一个月最多31天，只需要31个位（约4字节）就能存储一个用户一个月的签到记录，极大节省存储空间。
 
 Q：为什么用bitField命令统计签到次数？
+
 > A：bitField可以批量获取位图中的位数据，将指定位数的二进制数据转换为十进制数，然后通过统计二进制中1的个数来快速计算签到天数。
+>
+> ```
+> 第一种long signedDays = Long.bitCount(num10);
+> 第二种for (int i = 0; i < now.getDayOfMonth(); i++){
+>             if ((num10 & 1) == 1){
+>                 signedDays++;
+>             }
+>             num10 = num10 >>>1;
+>         }
+> ```
 
-**架构设计**：
-
-```
-签到请求 → SignController/createSign() → Redis SetBit设置签到位 → 返回结果
-补签请求 → SignController/backSign() → Redis SetBit设置指定日期签到位 → 返回结果
-统计请求 → SignController/CountSign() → Redis BitField获取位图 → 统计1的个数 → 返回签到/缺勤数
-```
+### 编码阶段
 
 **Redis Key设计**：
+
 ```
 sign:{userId}:{yyyy-MM}  // 用户签到位图Key，例如 sign:1:2024-01
 ```
 
-### 编码阶段
-
-**核心代码实现**：
+**策略流程图**：
 
 ```java
-// SignController.java - 普通签到接口
-@PostMapping
-public Result createSign() {
-    LocalDateTime now = LocalDateTime.now();
-    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM");
-    
-    Long userId = ThreadLocalParam.getUserId();
-    String dateKey = now.format(formatter);
-    String key = SIGN_DATE + userId + ":" + dateKey;
-    // 将当月第N天转换为位图索引（0开始）
-    Long day = Long.valueOf(now.getDayOfMonth() - 1);
-    // 设置对应位为1，表示已签到
-    Boolean result = stringRedisTemplate.opsForValue().setBit(key, day, true);
-    return Result.success(result == true ? "已签到" : "签到成功");
-}
+签到请求 → SignController/createSign() → Redis SetBit设置签到位（offset=日期天数）→ 返回结果
+补签请求 → SignController/backSign() → Redis SetBit设置指定日期签到位 → 返回结果
+统计请求 → SignController/CountSign() → Redis BitField获取位图 → 统计1的个数 → 返回签到/缺勤数
+保存请求（按月保存） → SignController/CountSign() → Redis BitField获取位图 → MySQL保存统计数据
 ```
 
-```java
-// SignController.java - 补签接口
-@PostMapping("/back")
-public Result backSign(String time) {
-    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    LocalDate localDate = LocalDate.parse(time, formatter);
-    
-    Long userId = ThreadLocalParam.getUserId();
-    DateTimeFormatter formatterKey = DateTimeFormatter.ofPattern("yyyy-MM");
-    String date = localDate.format(formatterKey);
-    String key = SIGN_DATE + userId + ":" + date;
-    Long value = Long.valueOf(localDate.getDayOfMonth() - 1);
-    Boolean result = stringRedisTemplate.opsForValue().setBit(key, value, true);
-    return Result.success(result == true ? "已补签" : "补签成功");
-}
-```
+**部分代码**：
 
 ```java
-// SignController.java - 签到统计接口
-@PostMapping("/count")
-public Result CountSign() {
-    LocalDateTime now = LocalDateTime.now();
-    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM");
-    
-    Long userId = ThreadLocalParam.getUserId();
-    String dateKey = now.format(formatter);
-    String key = SIGN_DATE + userId + ":" + dateKey;
-    // 使用bitField获取从第0位开始的now.getDayOfMonth()个位
-    List<Long> result = stringRedisTemplate.opsForValue().bitField(key, BitFieldSubCommands.create()
-            .get(BitFieldSubCommands.BitFieldType.unsigned(now.getDayOfMonth()))
-            .valueAt(0));
-    
-    if (CollectionUtil.isEmpty(result)) {
-        return Result.success(0);
-    }
-    
-    Long num10 = result.get(0);
-    // 将十进制转换为二进制字符串
-    String num2 = Long.toBinaryString(num10);
-    int count = 0;
-    // 统计二进制中1的个数（签到次数）
-    for (int i = 0; i < num2.length(); i++) {
-        if ('1' == num2.charAt(i)) {
-            count++;
-        }
-    }
-    return Result.success("签到::" + count + ",缺勤::" + (num2.length() - count));
-}
+// SignController.java - 每日签到（Redis BitMap）
+String key = "sign:" + userId + ":" + month;
+int dayOfMonth = LocalDate.now().getDayOfMonth();
+stringRedisTemplate.opsForValue().setBit(key, dayOfMonth - 1, true);
 ```
 
 ### 问题修复阶段
@@ -1360,6 +1044,64 @@ if (CollectionUtil.isEmpty(result)) {
 
 ---
 
+## 十一、店铺管理模块
+
+### 需求阶段
+
+**需求背景**：实现店铺管理功能，支持创建店铺和基于分类/地理位置查询附近店铺，为用户提供探店搜索服务。
+
+**痛点**：
+- 店铺查询需要支持按距离排序，传统数据库查询效率低
+- 店铺数据量较大，分页查询需要高效的游标策略
+- 店铺分类与位置信息需要关联存储，便于快速检索
+
+### 设计阶段
+
+**设计思路**：
+
+Q：为什么用Redis GEO存储店铺位置？
+> A：Redis GEO是专门为地理位置数据设计的数据结构，支持高效的距离计算和范围查询。使用GEO可以快速找到指定坐标附近的店铺，并且按距离排序，这是传统数据库难以实现的。
+
+Q：为什么设计两种查询模式？
+> A：当用户未提供位置信息时，使用基于ID的游标分页（滚动分页），简单高效；当用户提供经纬度时，使用Redis GEO按距离排序查询附近店铺，满足LBS（位置服务）需求。
+
+### 编码阶段
+
+**策略流程图**：
+
+```java
+创建店铺 → ShopController/createShop() → MySQL保存Shop和ShopType → Redis GEO存储位置（shopType:{typeId}）→ 返回结果
+查询店铺列表 → ShopController/ofType()
+    ├─ 无经纬度 → MySQL游标分页查询（按ID升序，每页5条）→ 返回结果
+    └─ 有经纬度 → Redis GEO搜索（5公里范围，按距离排序）→ 获取店铺ID列表 → MySQL查询详情 → 返回结果
+```
+
+**部分代码**：
+
+```java
+// ShopController.java - Redis GEO搜索附近店铺
+GeoResults<RedisGeoCommands.GeoLocation<String>> results = stringRedisTemplate.opsForGeo().search(
+    SHOP_TYPE + typeId,
+    GeoReference.fromCoordinate(x, y),
+    new Distance(5, Metrics.KILOMETERS),
+    RedisGeoCommands.GeoSearchCommandArgs.newGeoSearchArgs().includeDistance().limit(5).sortAscending()
+);
+```
+
+### 问题修复阶段
+
+**问题1**：Redis GEO搜索结果为空时可能导致空指针异常 ✅ 已修复
+
+**修复方案**：使用 `CollectionUtil.isEmpty()` 判断结果是否为空，为空时直接返回空列表
+
+```java
+if (CollectionUtil.isEmpty(results)){
+    return Result.success(null);
+}
+```
+
+---
+
 # 核心组件设计
 
 ### 1. Redis分布式ID生成器（RedisID）
@@ -1376,6 +1118,7 @@ Q：ID结构为什么是 1位符号位+时间戳(31位) + 序号(32位)？
 > A：0作为符号位，正数自增，31位时间戳可以表示约68年（2^31秒 ≈ 68年），从2020年开始够用。32位序号可以表示约42亿，足够单日并发使用。
 
 **代码实现**：
+
 ```java
 @Component
 public class RedisID {
@@ -1525,6 +1268,13 @@ return 0
 | :--- | :--- | :--- |
 | Spring Boot Starter Data Redis | 3.3.8 | **Redis BitMap**：存储用户签到位图（`sign:{userId}:{yyyy-MM}`），使用SetBit设置签到位，BitField批量获取位数据；每个用户每月仅需约4字节存储 |
 | Hutool All | 5.8.36 | CollectionUtil判断签到统计结果是否为空；BeanUtil对象属性拷贝 |
+
+### 店铺管理功能依赖
+| 依赖 | 版本 | 功能支撑 |
+| :--- | :--- | :--- |
+| MyBatis Plus | 3.5.9 | ShopMapper、ShopTypeMapper实现店铺和分类数据CRUD；AutoMetaObjectHandler自动填充create_time、update_time等元数据字段 |
+| Spring Boot Starter Data Redis | 3.3.8 | **Redis GEO**：存储店铺位置信息（`shopType:{typeId}`），支持按坐标搜索附近店铺，5公里范围内按距离排序；GeoSearch命令实现高效的LBS查询 |
+| Hutool All | 5.8.36 | BeanUtil进行对象属性拷贝（ShopDTO转Shop/ShopType）；CollectionUtil判断GEO搜索结果是否为空 |
 
 ---
 
