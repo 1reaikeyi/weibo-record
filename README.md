@@ -1,6 +1,6 @@
-# Weibo-trend-restaurant-payment微博热点，餐饮团购
+# Weibo-restaurantpay微博-餐结
 
-Weibo-trend-restaurant-payment微博团购,带动实体经济。Spring Boot + Vue 3 ,使用redis+nginx的分布式系统，提供用户认证、文章管理、分类管理、优惠券秒杀，微博团购，热点评论，团购支付，核心功能。由管理员，用户，商家三方组成。
+微博团购,带动实体经济。Spring Boot + Vue 3 ,使用redis+nginx的分布式系统，提供用户认证、文章管理、分类管理、优惠券秒杀，微博团购，热点评论，团购支付，核心功能。由管理员，用户，商家三方组成。
 
 ------
 
@@ -861,7 +861,7 @@ public Result sendCode(@Email String email) {
     stringRedisTemplate.opsForValue().set("code:" + email, code, 10, TimeUnit.MINUTES);
     // XADD到Redis Stream，异步发送邮件（请求立即返回）
     stringRedisTemplate.opsForStream().add(CODE_STREAM, Map.of("code", code, "email", email));
-    return Result.success("验证码：" + code);
+   return Result.success("10分钟内有效");
 }
 
 // 后台线程从Stream读取消息并发送邮件
@@ -900,6 +900,7 @@ public void init() {
         stringRedisTemplate.opsForStream().createGroup(STREAM_KEY, "g1");
         log.info("Redis Stream消费组创建成功");
     } catch (Exception e) {
+         //重复测试group会重复创建，有异常
         log.info("消费组已存在，跳过创建");
     }
     CODE_EXECUTOR.submit(new HandleCodeTask());

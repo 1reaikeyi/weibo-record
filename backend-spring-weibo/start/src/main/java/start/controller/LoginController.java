@@ -63,6 +63,7 @@ public class LoginController {
             stringRedisTemplate.opsForStream().createGroup(CODE_STREAM, CODE_STREAM_GROUP);
             log.info("Redis Stream消费组"+CODE_STREAM_GROUP+"创建成功");
         } catch (Exception e) {
+            //重复测试group会重复创建，有异常
             log.info("二次确认:Redis Stream消费组"+CODE_STREAM_GROUP+"创建成功");
         }
         CODE_EXECUTOR.submit(new LoginController.HandleCodeTask());
@@ -105,10 +106,9 @@ public class LoginController {
         message.put("code", code);
         message.put("email", email);
         stringRedisTemplate.opsForStream().add(CODE_STREAM, message);
-        return Result.success("验证码："+code);
+        log.info("验证码："+code);
+        return Result.success("10分钟内有效");
     }
-
-
 
 
     /**
@@ -139,7 +139,7 @@ public class LoginController {
             );
             SecurityContextHolder.getContext().setAuthentication(authentication);
             String token = JwtUtil.createJWT(jwtProperties.getSecretKey(), jwtProperties.getTtlMillis(), map);
-            stringRedisTemplate.opsForValue().set("bigevent:"+ user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set("weibo:"+ user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
             return Result.success(token);
         }
         return Result.error("验证失败");

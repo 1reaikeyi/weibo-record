@@ -112,7 +112,7 @@ public class UserController {
         // 生成 JWT Token
         String token = JwtUtil.createJWT(jwtProperties.getSecretKey(), jwtProperties.getTtlMillis(), map);
         // 将 Token 存入 Redis（白名单策略，logout 时删除）
-        stringRedisTemplate.opsForValue().set("bigevent:"+user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
+        stringRedisTemplate.opsForValue().set("weibo:"+user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
         
         return Result.success(token);
     }
@@ -179,7 +179,7 @@ public class UserController {
         userService.updateById(user);
         
         // 清除旧的登录令牌，强制重新登录
-        stringRedisTemplate.delete("bigevent:"+ userId);
+        stringRedisTemplate.delete("weibo:"+ userId);
         return Result.success("更新密码成功::"+userId);
     }
 
@@ -201,7 +201,7 @@ public class UserController {
         
         // 删除 Redis 中的 Token（白名单策略）
         // 删除后，后续请求携带该 Token 将无法通过 JwtAuthenticationFilter 的验证
-        stringRedisTemplate.delete("bigevent:" + userId);
+        stringRedisTemplate.delete("weibo:" + userId);
         
         log.info("用户登出成功，用户ID: {}", userId);
         return Result.success("登出成功");

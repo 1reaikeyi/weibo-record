@@ -68,7 +68,7 @@ public class JwtRefreshFilter extends OncePerRequestFilter {
             String currentId = claims.get(JwtConstant.ID).toString();
             Long userId = Long.parseLong(currentId);
 
-            String standardToken = stringRedisTemplate.opsForValue().get("bigevent:" + userId);
+            String standardToken = stringRedisTemplate.opsForValue().get("weibo:" + userId);
             if (!token.equals(standardToken)) {
                 log.warn("Token验证失败，可能已注销或被篡改, 用户ID: {}", userId);
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -84,7 +84,7 @@ public class JwtRefreshFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
             try {
-                stringRedisTemplate.expire("bigevent:" + userId, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
+                stringRedisTemplate.expire("weibo:" + userId, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
                 log.debug("Token过期时间已刷新，用户ID: {}", userId);
             } catch (Exception e) {
                 log.warn("刷新Token过期时间失败: {}", e.getMessage());
