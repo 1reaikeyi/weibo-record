@@ -10,7 +10,7 @@
 
 
 
-<img src="说明/原型功能/one.png" alt="封面" style="zoom:75%;" />
+<img src="说明/原型功能/封面.png" alt="封面" style="zoom:75%;" />
 
 # 项目结构
 
@@ -43,18 +43,8 @@ weibo-comment/
 │           └── resources/
 │               ├── application.yml      # 主配置文件
 │               └── *.lua                # Redis Lua脚本
-├── frontend-vue-weibo/                  # 前端代码（Vue 3 + Vite）
-│   └── src/
-│       ├── api/                         # API接口定义
-│       ├── assets/                      # 静态资源（图片、样式）
-│       ├── layout/                      # 布局组件
-│       ├── router/                      # 路由配置
-│       ├── stores/                      # Pinia状态管理（jwt、user）
-│       ├── utils/                       # 工具函数（request、format）
-│       └── views/                       # 页面视图
-│           ├── article/                 # 文章管理页面
-│           ├── login/                   # 登录页面
-│           └── user/                    # 用户中心页面
+├── frontend-vue-weibo-adminer/                  # 前端代码(Vue 3)
+├── frontend-vue-weibo-workerer/                 # 前端代码(Vue 3)
 ├── database-sql/                        # 数据库脚本目录
 │   ├── sql.txt                          # 数据库初始化SQL
 │   └── 数据库设计文档.md                  # 完整的数据库设计说明
@@ -70,7 +60,7 @@ weibo-comment/
     │       ├── redis异步.txt         # Redis异步（队列）测试Slf4j日志
     │       ├── stream异步.png        # Redis Stream异步测试截图
     │       └── stream异步.txt        # Redis Stream异步测试Slf4j日志
-    ├── postman测试文档                   # Postman测试文档
+    ├── nginx配置.txt                    # nginx配置.txt  
     ├── 高并发测试文档                     # 高并发测试文档
     └── 接口文档.md                       # 完整的API接口文档
 ```
