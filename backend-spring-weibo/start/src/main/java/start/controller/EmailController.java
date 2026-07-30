@@ -10,22 +10,15 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import model.entity.User;
-import model.entity.VoucherOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.connection.stream.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import service.UserService;
-import service.lock.ILock;
-import service.lock.RedisLock;
 import start.aspect.Info;
 
 import java.time.Duration;
@@ -37,7 +30,7 @@ import java.util.concurrent.TimeUnit;
 @RestController
 @RequestMapping("login")
 @Slf4j
-public class LoginController {
+public class EmailController {
     @Autowired
     private UserService userService;
     @Autowired
@@ -66,7 +59,7 @@ public class LoginController {
             //重复测试group会重复创建，有异常
             log.info("二次确认:Redis Stream消费组"+CODE_STREAM_GROUP+"创建成功");
         }
-        CODE_EXECUTOR.submit(new LoginController.HandleCodeTask());
+        CODE_EXECUTOR.submit(new EmailController.HandleCodeTask());
     }
 
     @PreDestroy
@@ -130,13 +123,13 @@ public class LoginController {
             Map<String,Object> map = new HashMap<>();
             map.put(JwtConstant.ID, user.getId());
             map.put(JwtConstant.NAME, user.getUserName());
-            // 设置 Spring Security 认证上下文（新方案）
-            // 替换原有的 ThreadLocalContextHolder.set(map)
+
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                     user.getId(),
                     null,
                     Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"))
             );
+            // 设置 Spring Security 认证上下文
             SecurityContextHolder.getContext().setAuthentication(authentication);
             String token = JwtUtil.createJWT(jwtProperties.getSecretKey(), jwtProperties.getTtlMillis(), map);
             stringRedisTemplate.opsForValue().set("weibo:"+ user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
@@ -147,7 +140,7 @@ public class LoginController {
 
 
     private class HandleCodeTask implements Runnable {
-        @Info(desc = "--异步处理")
+        @Info(desc = "--发送邮件")
         @Override
         public void run() {
             while (true) {

@@ -41,6 +41,7 @@ public class BlogController {
     private static final String BLOG_LIKED_PREFIX = "blog:liked:";
     private static final String BLOG_FOLLOW_PREFIX = "blog:follow:";
 
+
     @PostMapping
     public Result createBlog(@RequestBody BlogDTO blogDTO) {
         Long userId = SecurityContextParam.getCurrentUserId();
@@ -64,8 +65,8 @@ public class BlogController {
     public Result readBlog() {
         return Result.success(blogService.list());
     }
-    @PostMapping("/liked/{id}")
-    public Result isliked(@PathVariable Long id) {
+    @PostMapping("/liked")
+    public Result isliked(@RequestBody Long id) {
         Long userId = SecurityContextParam.getCurrentUserId();
         Double liked = stringRedisTemplate.opsForZSet().score(BLOG_LIKED_PREFIX + id,userId.toString());
         if (liked == null) {
@@ -86,8 +87,8 @@ public class BlogController {
             return Result.success("unliked::"+id);
         }
     }
-    @GetMapping("liked/of")
-    public Result likedOf(@PathParam("id") long id) {
+    @GetMapping("liked/of/{id}")
+    public Result likedOf(@PathVariable long id) {
         Long userId = SecurityContextParam.getCurrentUserId();
         Double liked = stringRedisTemplate.opsForZSet().score(BLOG_LIKED_PREFIX + id,userId.toString());
         return Result.success(liked == null ? false : true);
@@ -142,5 +143,6 @@ public class BlogController {
         next.setOffset(Long.valueOf(os));
         return Result.success(next);
     }
+
 
 }

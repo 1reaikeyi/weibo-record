@@ -25,14 +25,13 @@ public class LoginUserService implements UserDetailsService {
      */
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // 复用已有的 findByUsername() 方法查询用户
+        // userService的 findByUsername() 方法查询用户
         User user = userService.findByUsername(username);
 
         if (user == null) {
             throw new UsernameNotFoundException("用户不存在");
         }
         // 返回 Security 的 User 对象（注意：这里是 org.springframework.security.core.userdetails.User）
-        // 参数：username, password, authorities（权限列表）
         return new org.springframework.security.core.userdetails.User(
                 user.getUserName(),           // 用户名
                 user.getPassword(),           // 加密后的密码（Security 会自动比对）
