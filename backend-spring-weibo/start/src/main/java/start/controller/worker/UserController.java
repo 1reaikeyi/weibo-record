@@ -1,4 +1,6 @@
-package start.controller;
+package start.controller.worker;
+
+import static common.constant.RedisPrefixContant.WEIBO_USER_AUTHHEADER_PREFIX;
 
 import common.constant.JwtConstant;
 import common.properties.JwtProperties;
@@ -62,7 +64,7 @@ public class UserController {
      */
     @PostMapping("/register")
     public Result register(@RequestBody User user){
-        User checkUser = userService.findByUsername(user.getUserName());
+        User checkUser = userService.findByUsername(user.getUsername());
         if(checkUser != null){
             return Result.error("用户名已存在");
         }
@@ -70,7 +72,7 @@ public class UserController {
             user.setPassword("123456");
         }
         User newUser = User.builder()
-                .userName(user.getUserName())
+                .username(user.getUsername())
                 .password(passwordEncoder.encode(user.getPassword()))
                 .nickName(user.getNickName()).email(user.getEmail()).userPic(user.getUserPic())
                 .build();
@@ -81,42 +83,40 @@ public class UserController {
     /**
      * 用户登录
      * 
-     * @param userName 用户名
+     * @param username 用户名
      * @param password 密码
      * @return 结果
      */
     @Info(desc = "用户登录")
     @PostMapping("/login")
-    public Result login(String userName, @Pattern(regexp = "^\\S{5,16}$") String password){
-        // Security 会自动调用 LoginUserService.loadUserByUsername() 查询用户
-        // 并使用 BCryptPasswordEncoder.matches() 验证密码
-        UsernamePasswordAuthenticationToken authRequest = new UsernamePasswordAuthenticationToken(userName, password);
-        Authentication authentication = authenticationManager.authenticate(authRequest);
+    public Result login(String username, @Pattern(regexp = "^\\S{5,16}$") String password){
+        UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken = new UsernamePasswordAuthenticationToken(
+                "emp:" + username, password);
+        Authentication authentication = authenticationManager.authenticate(usernamePasswordAuthenticationToken);
         if (!authentication.isAuthenticated()){
             return Result.error("用户名或密码错误");
         }
         // 认证成功后，查询用户完整信息
-        User user = userService.findByUsername(userName);
+        User user = userService.findByUsername(username);
         Map<String,Object> map = new HashMap<>();
-        map.put(JwtConstant.ID, user.getId());
-        map.put(JwtConstant.NAME, user.getUserName());
-        UsernamePasswordAuthenticationToken authenticated = new UsernamePasswordAuthenticationToken(
-                new LoginPrincipal(user.getId(), user.getUserName()),
+        map.put(JwtConstant.USER_ID, user.getId());
+        map.put(JwtConstant.USER_NAME, user.getUsername());
+        map.put(JwtConstant.TYPE, "user");
+        UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
+                new LoginPrincipal(user.getId(), user.getUsername()),
                 null,
                 Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"))
         );
+        System.out.println("authenticationToken = " + authenticationToken);
         /**
-         * authenticated = UsernamePasswordAuthenticationToken
-         * [Principal=LoginPrincipal(id=1, username=张三),Credentials=[PROTECTED],
-         * Authenticated=true, Details=null, Granted Authorities=[ROLE_USER]]
+         * UsernamePasswordAuthenticationToken
+         * [Principal=LoginPrincipal(id=1, username=张三), Credentials=[PROTECTED], Authenticated=true, Details=null,
+         * Granted Authorities=[ROLE_USER]]
          */
         // 构建包含用户ID的认证对象并设置到 SecurityContext
-        SecurityContextHolder.getContext().setAuthentication(authenticated);
-        // 生成 JWT Token
+        SecurityContextHolder.getContext().setAuthentication(authenticationToken);
         String token = JwtUtil.createJWT(jwtProperties.getSecretKey(), jwtProperties.getTtlMillis(), map);
-        // 将 Token 存入 Redis
-        stringRedisTemplate.opsForValue().set("weibo:"+user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
-        
+        stringRedisTemplate.opsForValue().set(WEIBO_USER_AUTHHEADER_PREFIX + user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
         return Result.success(token);
     }
     @Info(desc = "用户登出")
@@ -128,7 +128,7 @@ public class UserController {
             return Result.error("未登录");
         }
         //删除
-        stringRedisTemplate.delete("weibo:" + userId);
+        stringRedisTemplate.delete(WEIBO_USER_AUTHHEADER_PREFIX + userId);
         //删除线程
         SecurityContextHolder.clearContext();
         return Result.success("logout");
@@ -195,7 +195,7 @@ public class UserController {
         userService.updateById(user);
 
         // 清除旧的登录令牌，强制重新登录
-        stringRedisTemplate.delete("weibo:"+ userId);
+        stringRedisTemplate.delete(WEIBO_USER_AUTHHEADER_PREFIX + userId);
         return Result.success("重新登录::"+userId);
     }
 

@@ -39,14 +39,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Override
     public User findByUsername(String username) {
         return this.lambdaQuery()
-                .eq(User::getUserName, username)
+                .eq(User::getUsername, username)
                 .one();
     }
 
     @Override
     public User matchUser(String userName, String password) {
         LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(User::getUserName, userName);
+        queryWrapper.eq(User::getUsername, userName);
         User checkUser = this.getOne(queryWrapper);
         if (checkUser == null) {
             throw new RuntimeException("用户名或密码错误");

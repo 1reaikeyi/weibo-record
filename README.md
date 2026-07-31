@@ -1,4 +1,4 @@
-# Weibo-restaurantpay微博-餐结
+# Weibo-record微博-记录
 
 微博团购,带动实体经济。Spring Boot + Vue 3 ,使用redis+nginx的分布式系统，提供用户认证、文章管理、分类管理、优惠券秒杀，微博团购，热点评论，团购支付，核心功能。由管理员，用户，商家三方组成。
 

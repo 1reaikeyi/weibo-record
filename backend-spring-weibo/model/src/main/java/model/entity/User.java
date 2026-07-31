@@ -25,7 +25,7 @@ public class User implements Serializable {
     private Long id;//主键ID
 
     @TableField(value = "username")
-    private String userName;//用户名
+    private String username;//用户名
 
     @JsonIgnore
     @TableField(value = "password")

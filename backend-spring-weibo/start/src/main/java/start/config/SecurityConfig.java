@@ -3,6 +3,7 @@ package start.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import common.properties.JwtProperties;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -23,8 +24,9 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import start.filter.EmployeeRefreshRequestFilter;
 import start.filter.JwtAuthenticationFilter;
-import start.filter.JwtRefreshFilter;
+import start.filter.UserRefreshRequestFilter;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -42,17 +44,19 @@ import java.util.Map;
 @EnableMethodSecurity
 @Slf4j
 public class SecurityConfig {
-
-    /**
-     * 注册 BCryptPasswordEncoder 为 Spring Bean
-     */
+    @Autowired
+    private JwtProperties jwtProperties;
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
     /**
-     * 注册 AuthenticationManager Bean
+     * 注册 AuthenticationManager Bean：
+     * 由 AuthenticationConfiguration 构建，MultiLoginAuthenticationProvider（@Component）
+     * 会被 Spring Security 自动装配为其中的 AuthenticationProvider
      */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
@@ -63,23 +67,21 @@ public class SecurityConfig {
      * 配置 SecurityFilterChain
      * 
      * 过滤器执行顺序：
-     * 1. JwtRefreshFilter - 提取Token，验证有效性，刷新过期时间，设置SecurityContext
-     * 2. JwtAuthenticationFilter - 拦截未登录用户
-     * 3. UsernamePasswordAuthenticationFilter - Spring Security默认认证过滤器
-     * 
-     * 两个 Filter 不在类上标注 @Component，而是在此方法中用 new 创建实例
-     * 避免被自动注册为 Servlet 过滤器导致 order 冲突
+     * 1. UserRefreshRequestFilter - user token 刷新与验证（设置 ROLE_USER）
+     * 2. EmployeeRefreshRequestFilter - emp token 刷新与验证（设置 ROLE_ADMIN）
+     * 3. JwtAuthenticationFilter - 拦截未登录用户
+     * 4. UsernamePasswordAuthenticationFilter - Spring Security默认认证过滤器
      */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
                                            JwtProperties jwtProperties,
                                            StringRedisTemplate stringRedisTemplate) throws Exception {
-        // 创建自定义过滤器实例（非 Spring Bean，避免 Servlet 容器自动注册）
-        JwtRefreshFilter jwtRefreshFilter = new JwtRefreshFilter(jwtProperties, stringRedisTemplate);
+        // 创建自定义过滤器实例（非 Spring Bean，避免 Servlet 容器自动注册导致顺序冲突）
+        UserRefreshRequestFilter userRefreshRequestFilter = new UserRefreshRequestFilter(jwtProperties, stringRedisTemplate);
+        EmployeeRefreshRequestFilter employeeRefreshRequestFilter = new EmployeeRefreshRequestFilter(jwtProperties, stringRedisTemplate);
         JwtAuthenticationFilter jwtAuthenticationFilter = new JwtAuthenticationFilter();
 
-        http
-                .csrf(AbstractHttpConfigurer::disable)
+        http.csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session
@@ -87,6 +89,7 @@ public class SecurityConfig {
                 .cors(this::configureCors)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/user/register", "/user/login", "/user/logout").permitAll()
+                        .requestMatchers("/employee/login", "/employee/logout").permitAll()
                         .requestMatchers("/login/code", "/login/byEmail").permitAll()
                         .requestMatchers("/img/**").permitAll()
                         .anyRequest().authenticated()
@@ -95,9 +98,11 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint())
                         .accessDeniedHandler(accessDeniedHandler())
                 )
-                // 添加 JWT 刷新过滤器（最前面，在认证过滤器之前）
-                .addFilterBefore(jwtRefreshFilter, UsernamePasswordAuthenticationFilter.class)
-                // 添加 JWT 认证过滤器（在 RefreshFilter 之后）
+                // user 刷新过滤器（处理 user token，其他 token 放行）
+                .addFilterBefore(userRefreshRequestFilter, UsernamePasswordAuthenticationFilter.class)
+                // emp 刷新过滤器（处理 emp token，其他 token 放行）
+                .addFilterBefore(employeeRefreshRequestFilter, UsernamePasswordAuthenticationFilter.class)
+                // 认证拦截过滤器（在 RefreshFilter 之后）
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

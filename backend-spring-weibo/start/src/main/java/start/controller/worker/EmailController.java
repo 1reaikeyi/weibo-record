@@ -1,4 +1,6 @@
-package start.controller;
+package start.controller.worker;
+
+import static common.constant.RedisPrefixContant.WEIBO_USER_AUTHHEADER_PREFIX;
 
 import common.constant.JwtConstant;
 import common.properties.JwtProperties;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import service.UserService;
 import start.aspect.Info;
+import start.security.LoginPrincipal;
 
 import java.time.Duration;
 import java.util.*;
@@ -121,18 +124,19 @@ public class EmailController {
         User user = userService.matchEmail(email);
         if(standard_code.equals(code)){
             Map<String,Object> map = new HashMap<>();
-            map.put(JwtConstant.ID, user.getId());
-            map.put(JwtConstant.NAME, user.getUserName());
+            map.put(JwtConstant.USER_ID, user.getId());
+            map.put(JwtConstant.USER_NAME, user.getUsername());
+            map.put(JwtConstant.TYPE, "user");
 
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                    user.getId(),
+                    new LoginPrincipal(user.getId(), user.getUsername()),
                     null,
                     Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"))
             );
             // 设置 Spring Security 认证上下文
             SecurityContextHolder.getContext().setAuthentication(authentication);
             String token = JwtUtil.createJWT(jwtProperties.getSecretKey(), jwtProperties.getTtlMillis(), map);
-            stringRedisTemplate.opsForValue().set("weibo:"+ user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set(WEIBO_USER_AUTHHEADER_PREFIX + user.getId(), token, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
             return Result.success(token);
         }
         return Result.error("验证失败");

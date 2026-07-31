@@ -1,4 +1,4 @@
-package start.controller;
+package start.controller.file;
 
 import common.result.Result;
 import jakarta.servlet.http.HttpServletResponse;

@@ -14,10 +14,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * JWT认证拦截过滤器（第二个）
+ * JWT认证拦截过滤器
  *
- * 职责：拦截未登录的用户
- * 执行时机：在 JwtRefreshFilter 之后执行，在 UsernamePasswordAuthenticationFilter 之前
+ * 职责：拦截未登录的请求
+ * 执行时机：在 UserRefreshRequestFilter / EmployeeRefreshRequestFilter 之后
  *
  * 注意：必须跳过公共路径（登录、注册等），否则未登录请求也会被拦截
  */
@@ -38,6 +38,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return path.equals("/user/register")
                 || path.equals("/user/login")
                 || path.equals("/user/logout")
+                || path.equals("/employee/login")
+                || path.equals("/employee/logout")
                 || path.equals("/login/code")
                 || path.equals("/login/byEmail")
                 || path.startsWith("/img/");
@@ -57,6 +59,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        // 已认证：放行到后续过滤器 / Controller
         filterChain.doFilter(request, response);
     }
 }

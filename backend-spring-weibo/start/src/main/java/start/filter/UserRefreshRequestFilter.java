@@ -16,28 +16,31 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import start.security.LoginPrincipal;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import static common.constant.RedisPrefixContant.WEIBO_USER_AUTHHEADER_PREFIX;
+
 /**
- * JWT刷新与验证过滤器（第一个）
- * 
+ * user 用户 Token 刷新与验证过滤器
+ *
  * 职责：
  * 1. 提取请求头中的 Token
- * 2. 验证 JWT 有效性
- * 3. 刷新 Redis 中 Token 的过期时间（滑动过期策略）
- * 4. 设置 SecurityContext
+ * 2. 只处理 user 类型（TYPE=user）的 Token，emp 的 Token 直接放行交给 EmployeeRefreshRequestFilter
+ * 3. 用 Redis 校验（weibo:user:{id}）并刷新过期时间
+ * 4. 设置 SecurityContext（ROLE_USER）
  */
 @Slf4j
-public class JwtRefreshFilter extends OncePerRequestFilter {
+public class UserRefreshRequestFilter extends OncePerRequestFilter {
 
     private final JwtProperties jwtProperties;
     private final StringRedisTemplate stringRedisTemplate;
 
-    public JwtRefreshFilter(JwtProperties jwtProperties, StringRedisTemplate stringRedisTemplate) {
+    public UserRefreshRequestFilter(JwtProperties jwtProperties, StringRedisTemplate stringRedisTemplate) {
         this.jwtProperties = jwtProperties;
         this.stringRedisTemplate = stringRedisTemplate;
     }
@@ -56,44 +59,47 @@ public class JwtRefreshFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
+        String token = extractToken(request);
+        if (token == null) {
+            // 没有 token，放行，由后面的认证过滤器决定是否 401
+            filterChain.doFilter(request, response);
+            return;
+        }
         try {
-            String token = extractToken(request);
-
-            if (token == null) {
+            Map<String, Object> claims = JwtUtil.parseJWT(jwtProperties.getSecretKey(), token);
+            String type = claims.get(JwtConstant.TYPE) != null
+                    ? claims.get(JwtConstant.TYPE).toString() : "user";
+            if (!"user".equals(type)) {
+                // 不是 user 的 token（emp），交给 EmployeeRefreshRequestFilter
                 filterChain.doFilter(request, response);
                 return;
             }
 
-            Map<String, Object> claims = JwtUtil.parseJWT(jwtProperties.getSecretKey(), token);
-            String currentId = claims.get(JwtConstant.ID).toString();
-            Long userId = Long.parseLong(currentId);
+            Long userId = Long.parseLong(claims.get(JwtConstant.USER_ID).toString());
+            String username = claims.get(JwtConstant.USER_NAME) != null
+                    ? claims.get(JwtConstant.USER_NAME).toString() : "";
 
-            String standardToken = stringRedisTemplate.opsForValue().get("weibo:" + userId);
+            String standardToken = stringRedisTemplate.opsForValue().get(WEIBO_USER_AUTHHEADER_PREFIX + userId);
             if (!token.equals(standardToken)) {
-                log.warn("Token验证失败，可能已注销或被篡改, 用户ID: {}", userId);
+                log.warn("user Token 验证失败，可能已注销或被篡改, 用户ID: {}", userId);
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 return;
             }
 
             Authentication authentication = new UsernamePasswordAuthenticationToken(
-                    userId,
+                    new LoginPrincipal(userId, username),
                     token,
                     Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"))
             );
-
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            try {
-                stringRedisTemplate.expire("weibo:" + userId, jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
-                log.debug("Token过期时间已刷新，用户ID: {}", userId);
-            } catch (Exception e) {
-                log.warn("刷新Token过期时间失败: {}", e.getMessage());
-            }
+            // 滑动过期
+            stringRedisTemplate.expire(WEIBO_USER_AUTHHEADER_PREFIX + userId,
+                    jwtProperties.getTtlMillis(), TimeUnit.SECONDS);
 
             filterChain.doFilter(request, response);
-
         } catch (Exception e) {
-            log.warn("JWT处理失败: {}", e.getMessage());
+            log.warn("user JWT 处理失败: {}", e.getMessage());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         }
     }

@@ -1,4 +1,4 @@
-package start.controller;
+package start.controller.file;
 
 import common.util.AliOssUtil;
 import lombok.extern.slf4j.Slf4j;

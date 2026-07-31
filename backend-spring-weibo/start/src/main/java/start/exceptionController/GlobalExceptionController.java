@@ -1,4 +1,4 @@
-package common.exception;
+package start.exceptionController;
 
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -8,7 +8,7 @@ import common.result.Result;
  * 全局异常处理器 - 统一处理应用中的异常
  */
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+public class GlobalExceptionController {
     @ExceptionHandler(Exception.class)
     public Result exception(Exception e) {
         return Result.error(e.getMessage() + "去联系管理员");
