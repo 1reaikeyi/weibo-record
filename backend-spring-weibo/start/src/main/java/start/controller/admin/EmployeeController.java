@@ -69,11 +69,11 @@ public class EmployeeController {
             /**
              *
              ┌────────────────────────────────────────────┬───────────────────────────────────────┐
-             │                    构造                    │             authenticated             │
+             │                    构造                     │             authenticated             │
              ├────────────────────────────────────────────┼───────────────────────────────────────┤
-             │ (principal, credentials) 2 参 ← 你用的这个 │ false（未认证），只是装了个"登录请求" │
+             │ (principal, credentials) 2 参 ← 你用的这个    │ authorities =false（未认证），只是装了个"登录请求" │
              ├────────────────────────────────────────────┼───────────────────────────────────────┤
-             │ (principal, credentials, authorities) 3 参 │ true（已认证），权限也带上            │
+             │ (principal, credentials, authorities) 3 参  │ true（已认证），权限也带上            │
              └────────────────────────────────────────────┴───────────────────────────────────────┘
              */
             UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(

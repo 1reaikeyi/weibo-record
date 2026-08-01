@@ -16,7 +16,12 @@ public class WebConfig implements WebMvcConfigurer {
      */
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        //img
         registry.addResourceHandler("/img/**")
                 .addResourceLocations("file:img/");
+        // 保留默认映射
+        registry.addResourceHandler("/**")
+                .addResourceLocations("classpath:/static/");
     }
+
 }

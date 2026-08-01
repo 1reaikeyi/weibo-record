@@ -9,13 +9,13 @@ import org.springframework.web.bind.annotation.RestController;
 @EnableMethodSecurity(prePostEnabled = true)
 public class LoginRole {
     @PreAuthorize("hasRole('ROLE_USER') or hasRole('ROLE_ADMIN')")
-    @RequestMapping("/select")
+    @RequestMapping("/admin")
     public String select() {
-        return "hasRole('ROLE_USER') or hasRole('ROLE_ADMIN')+select";
+        return "hasRole('ROLE_USER') or hasRole('ROLE_ADMIN')";
     }
     @PreAuthorize("hasRole('ROLE_USER') or hasRole('ROLE_ADMIN')")
-    @RequestMapping("/delete")
+    @RequestMapping("/user")
     public String delete() {
-        return "hasRole('ROLE_ADMIN') + delete";
+        return "hasRole('ROLE_ADMIN')";
     }
 }

@@ -18,11 +18,9 @@ import java.io.IOException;
  *
  * 职责：拦截未登录的请求
  * 执行时机：在 UserRefreshRequestFilter / EmployeeRefreshRequestFilter 之后
- *
- * 注意：必须跳过公共路径（登录、注册等），否则未登录请求也会被拦截
  */
 @Slf4j
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
+public class AuthenticationRequestFilter extends OncePerRequestFilter {
 
     /**
      * 跳过不需要认证的公共路径

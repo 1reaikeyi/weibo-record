@@ -18,12 +18,6 @@
     </properties>
 
     <dependencies>
-        <!-- Lombok：编译期注解处理器 -->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
         <!-- common 公共模块：提供统一响应结果、常量、工具类等 -->
         <dependency>
             <groupId>org.example</groupId>
@@ -35,6 +29,12 @@
             <groupId>org.example</groupId>
             <artifactId>model</artifactId>
             <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+        <!-- Lombok：编译期注解处理器 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
         </dependency>
         <!-- MyBatis-Plus ORM 框架：提供 Mapper 接口基础支持 -->
         <dependency>

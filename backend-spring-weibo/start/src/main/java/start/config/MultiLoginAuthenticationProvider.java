@@ -39,8 +39,7 @@ public class MultiLoginAuthenticationProvider implements AuthenticationProvider 
         int idx = principal.indexOf(':');
         String type = idx > 0 ? principal.substring(0, idx) : "user";
         String username = idx > 0 ? principal.substring(idx + 1) : principal;
-
-        // ===== emp 员工登录（ROLE_ADMIN）=====
+        // ===== emp 员工登录=====
         if ("emp".equals(type)) {
             Employee employee = employeeService.findByUsername(username);
             if (employee == null || !passwordEncoder.matches(password, employee.getPassword())) {
@@ -52,7 +51,7 @@ public class MultiLoginAuthenticationProvider implements AuthenticationProvider 
                     Collections.singletonList(new SimpleGrantedAuthority("ROLE_ADMIN")));
         }
 
-        // ===== user 普通用户登录（ROLE_USER）=====
+        // ===== user 普通用户登录=====
         User user = userService.findByUsername(username);
         if (user == null || !passwordEncoder.matches(password, user.getPassword())) {
             throw new BadCredentialsException("用户名或密码错误");

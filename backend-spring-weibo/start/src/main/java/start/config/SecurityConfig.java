@@ -24,8 +24,8 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import start.filter.AuthenticationRequestFilter;
 import start.filter.EmployeeRefreshRequestFilter;
-import start.filter.JwtAuthenticationFilter;
 import start.filter.UserRefreshRequestFilter;
 
 import jakarta.servlet.ServletException;
@@ -65,21 +65,14 @@ public class SecurityConfig {
 
     /**
      * 配置 SecurityFilterChain
-     * 
-     * 过滤器执行顺序：
-     * 1. UserRefreshRequestFilter - user token 刷新与验证（设置 ROLE_USER）
-     * 2. EmployeeRefreshRequestFilter - emp token 刷新与验证（设置 ROLE_ADMIN）
-     * 3. JwtAuthenticationFilter - 拦截未登录用户
-     * 4. UsernamePasswordAuthenticationFilter - Spring Security默认认证过滤器
      */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
                                            JwtProperties jwtProperties,
                                            StringRedisTemplate stringRedisTemplate) throws Exception {
-        // 创建自定义过滤器实例（非 Spring Bean，避免 Servlet 容器自动注册导致顺序冲突）
         UserRefreshRequestFilter userRefreshRequestFilter = new UserRefreshRequestFilter(jwtProperties, stringRedisTemplate);
         EmployeeRefreshRequestFilter employeeRefreshRequestFilter = new EmployeeRefreshRequestFilter(jwtProperties, stringRedisTemplate);
-        JwtAuthenticationFilter jwtAuthenticationFilter = new JwtAuthenticationFilter();
+        AuthenticationRequestFilter authenticationRequestFilter = new AuthenticationRequestFilter();
 
         http.csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
@@ -103,7 +96,7 @@ public class SecurityConfig {
                 // emp 刷新过滤器（处理 emp token，其他 token 放行）
                 .addFilterBefore(employeeRefreshRequestFilter, UsernamePasswordAuthenticationFilter.class)
                 // 认证拦截过滤器（在 RefreshFilter 之后）
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(authenticationRequestFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
