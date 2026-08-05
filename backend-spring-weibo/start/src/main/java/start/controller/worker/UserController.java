@@ -91,7 +91,7 @@ public class UserController {
     @PostMapping("/login")
     public Result login(String username, @Pattern(regexp = "^\\S{5,16}$") String password){
         UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken = new UsernamePasswordAuthenticationToken(
-                "emp:" + username, password);
+                "user:" + username, password);
         Authentication authentication = authenticationManager.authenticate(usernamePasswordAuthenticationToken);
         if (!authentication.isAuthenticated()){
             return Result.error("用户名或密码错误");

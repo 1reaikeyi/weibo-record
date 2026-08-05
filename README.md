@@ -1,14 +1,25 @@
-# Weibo-record微博-记录
-
-weibo-record：C2C经营模式，多个商家，多个买家。微博团购， 由管理员，用户，商家三方组成。
-
-微博团购,带动实体经济。由Spring Boot + Vue 3 ，使用redis中间件+nginx作为gateway的分布式系统，提供用户认证、文章管理、分类管理、优惠券秒杀，微博团购，热点评论，团购支付，附近商铺搜索等核心功能。
-
-# 后端说明
-
-
+<div align="center">
+  <h1>Weibo-record微博-记录</h1>
+    <h2>weibo-record：C2C经营模式，多个商家，多个买家。微博团购， 由管理员，用户，商家三方组成。<h2>
+    <h4>微博团购,带动实体经济。由Spring Boot + Vue 3的前后端分离设计，使用redis中间件+nginx作为gateway的分布式系统。<h4>
+  <p>
+    <h1>配置要求</h1>
+    <img src="https://img.shields.io/badge/Java-17+ -6DB33F?style=flat-square&logo=java&logoColor=white" alt="Java" />
+    <img src="https://img.shields.io/badge/Spring%20Boot-3.+ -6DB33F?style=flat-square&logo=springboot&logoColor=white" alt="Spring Boot" />
+    <img src="https://img.shields.io/badge/MySQL-8.0+ -6DB33F?style=flat-square&logo=mysql&logoColor=white" alt="mysql" />
+    <img src="https://img.shields.io/badge/Redis-7.0+ -6DB33F?style=flat-square&logo=redis&logoColor=white" alt="redis" />
+    <img src="https://img.shields.io/badge/Spring%20AI-1.1.+ -6DB33F?style=flat-square&logo=spring&logoColor=white" alt="spring ai" />
+    <img src="https://img.shields.io/badge/Vue-Node.js20.19.+ -6DB33F?style=flat-square&logo=vuedotjs&logoColor=white" alt="vue" />
+  </p>
+</div>
 
 <img src="说明/原型功能/封面.png" alt="封面" style="zoom:75%;" />
+
+# 启动步骤
+
+1. 创建数据库并导入 `sql/` 目录脚本。
+2. 修改 `start/src/main/resources/application-dev.yml` 中数据库与 Redis 配置。
+3. `npm run dev ` 前端启动服务。
 
 # 项目结构
 
@@ -16,12 +27,6 @@ weibo-record：C2C经营模式，多个商家，多个买家。微博团购， �
 weibo-comment/
 ├── backend-spring-weibo/                # 后端代码（Spring Boot 3 多模块）
 │   ├── common/                          # 公共模块
-│   │   └── src/main/java/common/
-│   │       ├── constant/                # 常量定义（JWT、错误码、Redis前缀）
-│   │       ├── exception/               # 全局异常处理
-│   │       ├── properties/              # 配置属性（JWT、OSS、邮箱）
-│   │       ├── result/                  # 统一响应封装（Result、ScrollResult）
-│   │       └── util/                    # 工具类
 │   │ 
 │   ├── model/                           # 数据传输对象
 │   │ 
@@ -30,17 +35,6 @@ weibo-comment/
 │   ├── service/                         # 业务逻辑模块	
 │   │ 
 │   └── start/                           # 启动模块
-│       └── src/main/
-│           ├── java/start/
-│           │   ├── controller/          # REST控制器（各模块API入口）
-│           │   ├── filter/              # JWT过滤器
-│           │   ├── config/              # 配置类
-│           │   ├── security/            # Spring Security安全相关
-│           │   ├── aspect/              # 自定义切面
-│           │   └── handler/             # 自动填充处理器
-│           └── resources/
-│               ├── application.yml      # 主配置文件
-│               └── *.lua                # Redis Lua脚本
 ├── frontend-vue-weibo-adminer/                  # 前端代码(Vue 3)
 ├── frontend-vue-weibo-workerer/                 # 前端代码(Vue 3)
 ├── database-sql/                        # 数据库脚本目录
@@ -62,14 +56,58 @@ weibo-comment/
     ├── 高并发测试文档                     # 高并发测试文档
     └── 接口文档.md                       # 完整的API接口文档
 ```
+##  能力全景
 
-# 环境要求
+| 能力域   | 能力说明                                                    |
+| -------- | ----------------------------------------------------------- |
+| 平台管理 | 员工管理、用户管理、权限拦截、登录校验、异常统一处理。      |
+|          |                                                             |
+|          |                                                             |
+|          |                                                             |
+|          |                                                             |
+|          |                                                             |
+|          |                                                             |
+|          |                                                             |
+| 缓存性能 | Redis + Spring Cache 用于高频访问数据缓存，减少数据库压力。 |
+| 可扩展性 | 模块化目录结构与分层设计，支持功能平滑扩展和二次开发。      |
 
-- JDK 17+
-- Spring Boot 3+
-- Node.js 20.19.0+ 或 22.12.0+
-- MySQL 8.0+
-- Redis 7.0+
+## 详细能力介绍
+
+### 1. 管理后台能力
+
+- 用户与员工管理：支持账号维护、状态启停、信息检索与运营分层管理。
+- 商品与分类管理：支持果蔬分类、商品信息、套餐组合、批量操作与业务配置。
+- 
+- 评价治理能力：支持评价列表、回复机制、评价统计看板。
+
+### 2. 用户端能力
+
+- 
+- 商品消费：支持果蔬详情查看、套餐详情查看、规格组合与加入购物车。
+- 交易转化：支持地址管理、优惠券抵扣、订单提交与支付流程承接。
+- 
+- 销量排行：支持日榜、周榜、月榜多维统计浏览，提升选购效率。
+
+### 3. 数据分析能力
+
+- 管理端数据大屏：展示用户数、订单数、营业额、排行等核心经营指标。
+- 评价统计：支持评价数量、评分分布、回复状态等可视化分析。
+- 
+
+### 4. 智能助手能力
+
+- 
+- 上下文会话：支持连续对话并保留上下文（含自动保留/清理策略）。
+- 业务融合：可作为前台浮窗助手，辅助用户提高下单决策效率。
+
+### 5. 工程与技术能力
+
+- 
+- 统一响应与异常治理：提升接口一致性与排障效率。
+- 。
+- 模块化代码组织：便于新增功能、替换组件和持续迭代。
+
+# 后端说明
 
 ## 一、用户管理模块
 
@@ -1154,144 +1192,6 @@ Q：为什么不用数据库自增ID？
 Q：ID结构为什么是 1位符号位+时间戳(31位) + 序号(32位)？
 
 > A：0作为符号位，正数自增，31位时间戳可以表示约68年（2^31秒 ≈ 68年），从2020年开始够用。32位序号可以表示约42亿，足够单日并发使用
-
-# 依赖说明
-
-### 用户管理功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| Spring Boot | 3.3.8 | 应用框架，自动配置数据源、Redis等基础设施 |
-| Spring Boot Starter Web | 3.3.8 | UserController提供REST接口（注册、登录、信息修改、头像上传、密码修改）；注册LoginInterceptor和ReLoginInterceptor拦截器校验登录状态 |
-| Spring Boot Starter Security | 3.3.8 | SecurityConfig注册PasswordEncoder Bean供全局注入使用；matches()方法验证密码，而非解密 |
-| MyBatis Plus | 3.5.9 | UserMapper继承BaseMapper实现用户数据CRUD；AutoMetaObjectHandler自动填充create_time、update_time等元数据字段 |
-| JJWT API/Impl/Jackson | 0.12.6 | JwtUtil生成登录Token，ReLoginInterceptor验证Token并实现滑动过期策略（每次请求刷新Redis中Token有效期） |
-| Spring Boot Starter Data Redis | 3.3.8 | 存储用户Token（`bigevent:{userId}`）和邮箱验证码（`code:{email}`，10分钟过期） |
-| Spring Boot Starter Validation | 3.3.8 | @NotNull、@Size等注解校验注册和登录参数的合法性 |
-| Aliyun SDK OSS | 3.17.4 | AliOssUtil实现用户头像上传到阿里云OSS，返回CDN访问URL |
-
-### 事件文章管理功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| MyBatis Plus | 3.5.9 | ArticleMapper实现文章数据CRUD；AutoMetaObjectHandler自动填充创建人ID和时间 |
-| Spring Boot Starter Data Redis | 3.3.8 | **缓存策略**：ArticleServiceImpl使用分布式锁（`setIfAbsent`）5秒+逻辑过期（RedisData包装类），防止缓存击穿30秒；文章数据缓存**30分钟 - 2小时**（逻辑过期）本文选择**30分钟**负载平衡；更新/删除后主动删除缓存保证一致性 |
-| Spring Boot Starter Validation | 3.3.8 | 自定义@ArticleStatus注解校验文章状态只能为"已发布"或"草稿" |
-| Aliyun SDK OSS | 3.17.4 | 文章封面图片上传到阿里云OSS |
-| Hutool All | 5.8.36 | BeanUtil进行缓存数据对象转换；StrUtil判空；JSONUtil序列化/反序列化Redis数据 |
-
-### 分类管理功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| MyBatis Plus | 3.5.9 | CategoryMapper实现分类数据CRUD；AutoMetaObjectHandler自动填充创建人ID和时间 |
-| Spring Boot Starter Data Redis | 3.3.8 | **缓存策略**：CategoryServiceImpl使用分布式锁5秒+逻辑过期，防止缓存击穿30秒；分类数据缓存**10分钟 - 30分钟**（逻辑过期），本文选择**30分钟****负载平衡；更新/删除后主动删除缓存 |
-| Spring Boot Starter Validation | 3.3.8 | @NotNull、@Size等注解校验分类名称和别名参数 |
-| Hutool All | 5.8.36 | BeanUtil进行对象属性拷贝；StrUtil判空；JSONUtil序列化/反序列化 |
-
-### 优惠券管理功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| MyBatis Plus | 3.5.9 | VoucherMapper、VoucherSeckillMapper、VoucherOrderMapper实现优惠券数据CRUD；AutoMetaObjectHandler自动填充create_time、update_time等元数据字段 |
-| Spring Boot Starter Data Redis | 3.3.8 | **分布式ID生成**：RedisID类基于Redis自增计数器实现全局唯一订单ID（0作为符号位+时间戳31位+序号32位）；存储秒杀库存信息；**分布式锁**：RedisLock基于setIfAbsent实现锁获取，Lua脚本原子释放 |
-| Spring Boot Starter Validation | 3.3.8 | 参数校验支持 |
-| Spring Boot Starter Web | 3.3.8 | 提供@Transactional注解实现秒杀订单事务一致性（通过spring-tx传递依赖） |
-| Hutool All | 5.8.36 | BeanUtil进行对象属性拷贝（VoucherDTO转Voucher）；UUID生成分布式锁唯一标识 |
-
-### 探店博文功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| MyBatis Plus | 3.5.9 | BlogMapper实现探店博文数据CRUD；AutoMetaObjectHandler自动填充create_time、update_time等元数据字段 |
-| Spring Boot Starter Data Redis | 3.3.8 | **点赞功能**：使用Redis ZSet存储点赞用户ID和时间戳，支持原子操作；实时查询点赞状态和热门点赞用户 |
-| Hutool All | 5.8.36 | BeanUtil进行对象属性拷贝（BlogDTO转Blog）；BooleanUtil判断布尔值 |
-
-### 评论与回复功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| MyBatis Plus | 3.5.9 | BlogCommentsMapper实现评论数据CRUD；支持多级回复查询（parent_id、answer_id） |
-| Spring Boot Starter Data Redis | 3.3.8 | 评论点赞功能支持；评论列表缓存 |
-
-### 文件管理功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| Spring Boot Starter Web | 3.3.8 | MultipartFile文件上传支持；文件下载响应流处理 |
-| Aliyun SDK OSS | 3.17.4 | AliOssUtil实现文件上传到阿里云OSS，支持CDN加速访问 |
-
-### 邮箱登录与验证码功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| Spring Boot Starter Mail | 3.3.8 | JavaMailSender实现邮件发送功能，支持SMTP协议 |
-| Spring Boot Starter Data Redis | 3.3.8 | **Redis Stream**：异步发送验证码消息队列（`valid:code:stream`），消费组模式支持多实例部署；存储验证码（`code:{email}`，10分钟过期）和登录Token（`bigevent:{userId}`） |
-| JJWT API/Impl/Jackson | 0.12.6 | JwtUtil生成邮箱登录Token，支持自定义载荷和过期时间 |
-| Spring Boot Starter Validation | 3.3.8 | @Email注解校验邮箱格式合法性 |
-
-### 关注管理功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| MyBatis Plus | 3.5.9 | UserFollowMapper实现关注关系数据CRUD；UserMapper查询用户信息 |
-| Spring Boot Starter Data Redis | 3.3.8 | **Redis Set**：存储用户关注列表（`follow:{userId}`），支持add/remove/intersect操作；共同关注通过Set交集运算高效计算 |
-| Hutool All | 5.8.36 | BooleanUtil判断关注状态布尔值 |
-
-### 签到管理功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| Spring Boot Starter Data Redis | 3.3.8 | **Redis BitMap**：存储用户签到位图（`sign:{userId}:{yyyy-MM}`），使用SetBit设置签到位，BitField批量获取位数据；每个用户每月仅需约4字节存储 |
-| Hutool All | 5.8.36 | CollectionUtil判断签到统计结果是否为空；BeanUtil对象属性拷贝 |
-
-### 店铺管理功能依赖
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| MyBatis Plus | 3.5.9 | ShopMapper、ShopTypeMapper实现店铺和分类数据CRUD；AutoMetaObjectHandler自动填充create_time、update_time等元数据字段 |
-| Spring Boot Starter Data Redis | 3.3.8 | **Redis GEO**：存储店铺位置信息（`shopType:{typeId}`），支持按坐标搜索附近店铺，5公里范围内按距离排序；GeoSearch命令实现高效的LBS查询 |
-| Hutool All | 5.8.36 | BeanUtil进行对象属性拷贝（ShopDTO转Shop/ShopType）；CollectionUtil判断GEO搜索结果是否为空 |
-
----
-
-### 秒杀功能依赖
-
-| 依赖 | 版本 | 功能支撑 |
-| :--- | :--- | :--- |
-| MyBatis Plus | 3.5.9 | VoucherMapper、VoucherSeckillMapper、VoucherOrderMapper实现优惠券数据CRUD；@Transactional注解实现事务一致性 |
-| Spring Boot Starter Data Redis | 3.3.8 | **Lua脚本**：原子性校验库存和重复下单；**Redis Stream**：异步订单消息队列（消费组模式支持多实例部署）；**分布式ID生成**：RedisID类生成全局唯一订单ID |
-| Spring Boot Starter Web | 3.3.8 | VoucherSeckillController、VoucherController、VoucherOrderController提供三种秒杀接口 |
-| Spring Boot Starter Validation | 3.3.8 | 参数校验支持 |
-| Hutool All | 5.8.36 | BeanUtil对象属性拷贝（VoucherDTO转Voucher）；UUID生成分布式锁唯一标识 |
-| Redisson | 3.37.0 | 分布式锁实现一人一单限制；Watchdog自动续期防止锁过期 |
-
----
-
-### 对比分析
-
-**问题1：直接在Controller层用synchronized**
-
-```java
-// 其他人写法 - 错误！
-@RequestMapping("/seckill")
-public synchronized Result seckill(Long voucherId) {
-    // 扣库存逻辑...
-}
-```
-> 本项目改进：synchronized只在单实例有效，集群环境下必须用Redis分布式锁。
-
-**问题2：不校验锁的持有者就释放**
-
-```java
-// 其他人写法 - 错误！
-public void unlock() {
-    stringRedisTemplate.delete(key);  // 可能删除其他线程的锁
-}
-```
-> 本项目改进：用Lua脚本校验锁的value，只有持有者才能释放。
-
-**问题3：同步处理订单**
-
-```java
-// 其他人写法 - 性能差！
-@RequestMapping("/seckill")
-public Result seckill(Long voucherId) {
-    // 同步扣库存...
-    // 同步保存订单...
-    return Result.success();
-}
-```
-> 本项目改进：先用Lua脚本在Redis中完成校验，再放入异步队列，后台线程处理数据库写入。
 
 ---
 
