@@ -2,7 +2,6 @@
   <h1>Weibo-record微博-记录</h1>
     <h2>weibo-record：C2C经营模式，多个商家，多个买家。微博团购， 由管理员，用户，商家三方组成。<h2>
     <h4>微博团购,带动实体经济。由Spring Boot + Vue 3的前后端分离设计，使用redis中间件+nginx作为gateway的分布式系统。<h4>
-  <p>
     <h1>配置要求</h1>
     <img src="https://img.shields.io/badge/Java-17+ -6DB33F?style=flat-square&logo=java&logoColor=white" alt="Java" />
     <img src="https://img.shields.io/badge/Spring%20Boot-3.+ -6DB33F?style=flat-square&logo=springboot&logoColor=white" alt="Spring Boot" />
@@ -12,7 +11,6 @@
     <img src="https://img.shields.io/badge/Vue-Node.js20.19.+ -6DB33F?style=flat-square&logo=vuedotjs&logoColor=white" alt="vue" />
   </p>
 </div>
-
 <img src="说明/原型功能/封面.png" alt="封面" style="zoom:75%;" />
 
 # 启动步骤
@@ -35,8 +33,7 @@ weibo-comment/
 │   ├── service/                         # 业务逻辑模块	
 │   │ 
 │   └── start/                           # 启动模块
-├── frontend-vue-weibo-adminer/                  # 前端代码(Vue 3)
-├── frontend-vue-weibo-workerer/                 # 前端代码(Vue 3)
+├── frontend-vue-weibo/                  # 前端代码(Vue 3)
 ├── database-sql/                        # 数据库脚本目录
 │   ├── sql.txt                          # 数据库初始化SQL
 │   └── 数据库设计文档.md                  # 完整的数据库设计说明
@@ -53,8 +50,7 @@ weibo-comment/
     │       ├── stream异步.png        # Redis Stream异步测试截图
     │       └── stream异步.txt        # Redis Stream异步测试Slf4j日志
     ├── nginx配置.txt                    # nginx配置.txt  
-    ├── 高并发测试文档                     # 高并发测试文档
-    └── 接口文档.md                       # 完整的API接口文档
+    └── 高并发测试文档                     # 高并发测试文档
 ```
 #  能力全景
 
@@ -216,7 +212,7 @@ public boolean preHandle(HttpServletRequest request, HttpServletResponse respons
 
 ### **策略流程图**
 
-![缓存](说明\原型功能\缓存.png)
+![缓存](说明/原型功能/缓存.png)
 
 ```java
 查询文章 → ArticleController → ArticleServiceImpl → Redis查询缓存
@@ -851,7 +847,7 @@ Q: 为什么从内存队列演进到Redis Stream？
 
 ## 八、邮箱登录与验证码模块
 
-![验证码](说明\原型功能\验证码.png)
+![验证码](说明/原型功能/验证码.png)
 
 ### 需求阶段
 
@@ -1191,15 +1187,15 @@ Q：ID结构为什么是 1位符号位+时间戳(31位) + 序号(32位)？
 
 # 前端功能演示
 
-| 登录页面       | ![登录页面](说明/原型功能/1.png)    |
-| -------------- | ----------------------------------- |
-| 分类管理       | ![登录页面](说明/原型功能/2.png)    |
-| 文章列表       | ![登录页面](说明/原型功能/3.png)    |
-| hot查看        | ![登录页面](说明/原型功能/4.png)    |
-| 用户设置       | ![登录页面](说明/原型功能/5.png)    |
-| 用户信息       | ![登录页面](说明/原型功能/6.png)    |
-| 用户密码       | ![登录页面](说明/原型功能/7.png)    |
-| 邮箱发送验证码 | ![登录页面](说明/原型功能/邮箱.png) |
+| 登录页面       | <img src="说明/原型功能/1.png" alt="登录页面" style="zoom:25%;" /> |
+| -------------- | ------------------------------------------------------------ |
+| 分类管理       | <img src="说明/原型功能/2.png" alt="登录页面" style="zoom:25%;" /> |
+| 文章列表       | <img src="说明/原型功能/3.png" alt="登录页面" style="zoom:25%;" /> |
+| hot查看        | <img src="说明/原型功能/4.png" alt="登录页面" style="zoom:25%;" /> |
+| 用户设置       | <img src="说明/原型功能/5.png" alt="登录页面" style="zoom:25%;" /> |
+| 用户信息       | <img src="说明/原型功能/6.png" alt="登录页面" style="zoom:25%;" /> |
+| 用户密码       | <img src="说明/原型功能/7.png" alt="登录页面" style="zoom:25%;" /> |
+| 邮箱发送验证码 | <img src="说明/原型功能/邮箱.png" alt="登录页面" style="zoom:50%;" /> |
 
 ------
 
